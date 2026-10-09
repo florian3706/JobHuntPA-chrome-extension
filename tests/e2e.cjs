@@ -178,10 +178,27 @@ function pagesServer() {
   }
   await popup.close();
 
+  // ---- Page without any detectable title: the user types one ----
+  const noTitleTab = await newJobTab("job-notitle.html");
+  popup = await openPopup(noTitleTab);
+  await popup.waitForSelector("#job-form:not(.hidden)");
+  eq("no title: field left empty", await popup.inputValue("#f-title"), "");
+  check("no title: server's hint shown", /No job title was found/.test(await popup.textContent("#job-notes")), await popup.textContent("#job-notes"));
+  await popup.click("#job-save");
+  await popup.waitForSelector("#job-status.error");
+  check("no title: saving without one explains why", /No job title was found/.test(await popup.textContent("#job-status")), await popup.textContent("#job-status"));
+  await popup.fill("#f-title", "Warehouse Operator");
+  await popup.fill("#f-company", "Shipco");
+  await popup.click("#job-save");
+  await popup.waitForSelector("#job-result:not(.hidden)");
+  check("no title: saved after typing one", /Saved/.test(await popup.textContent("#job-result")), await popup.textContent("#job-result"));
+  await popup.close();
+  await noTitleTab.close();
+
   // ---- Source ----
   const careersTab = await newJobTab("careers.html");
   popup = await openPopup(careersTab);
-  await popup.waitForSelector("#job-status, #job-form");
+  await popup.waitForSelector("#tab-job");
   await popup.focus("#tab-job");
   await popup.keyboard.press("ArrowRight");
   eq("arrow key switches tab", await popup.getAttribute("#tab-source", "aria-selected"), "true");
@@ -226,7 +243,7 @@ function pagesServer() {
   };
   await badKeyTest();
   if (!REAL) {
-    for (const [m, re] of [["busy", /encrypting/], ["rate", /Try again in 7 s/]]) {
+    for (const [m, re] of [["busy", /encrypting/], ["rate", /Try again in 7 seconds/]]) {
       await mode(m);
       popup = await openPopup(ldTab);
       await popup.waitForSelector("#job-status.error");

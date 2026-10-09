@@ -210,6 +210,13 @@ async function runPreview() {
     show(status, false);
   } catch (err) {
     if (seq !== previewSeq) return;
+    if (err.status === 422 && err.field === "title") {
+      // No title could be read: let the user type one (and the rest); saving sends the page again.
+      preview = { job: {}, existing: null, notes: [err.detail || "No job title was found on this page. Type one in, then save."] };
+      renderPreview(preview);
+      show(status, false);
+      return;
+    }
     setError(status, err, cfg, [["Try again", runPreview]]);
   }
 }

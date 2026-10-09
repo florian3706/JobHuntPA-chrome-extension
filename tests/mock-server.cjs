@@ -13,7 +13,7 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
     res.writeHead(status, { "Content-Type": typeof body === "string" ? "text/html; charset=utf-8" : "application/json", ...headers });
     res.end(data);
   };
-  const err = (res, status, detail, code, headers) => send(res, status, { detail, ...(code ? { code } : {}) }, headers);
+  const err = (res, status, detail, code, headers, field) => send(res, status, { detail, ...(code ? { code } : {}), ...(field ? { field } : {}) }, headers);
 
   function readJobLd(html) {
     const m = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html);
@@ -66,7 +66,7 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
       if (!url.pathname.startsWith("/api/")) return err(res, 404, "Not Found");
       if (req.headers.authorization !== `Bearer ${KEY}` || state.mode === "revoked") return err(res, 401, "This extension key is not valid.", "token_invalid");
       if (state.mode === "busy") return err(res, 423, "The server is encrypting your data. Try again in a few minutes.", "encrypting");
-      if (state.mode === "rate") return err(res, 429, "Slow down.", undefined, { "Retry-After": "7" });
+      if (state.mode === "rate") return err(res, 429, "Too many tries with keys that don't work. Try again in 7 seconds.", "rate_limited", { "Retry-After": "7" });
       const w = ws(req);
       if (url.pathname !== "/api/extension/status" && !WORKSPACES.some((x) => x.id === w)) return err(res, 404, "Workspace not found.");
 
@@ -74,7 +74,7 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
         return send(res, 200, { ok: true, api: 1, app_version: "1.13.0", label: "Test browser", expires_at: "2027-10-09T12:00:00Z", workspaces: WORKSPACES, default_workspace: 1 });
       if (req.method === "POST" && url.pathname === "/api/extension/preview") {
         const b = build(body);
-        if (!b.base.title && !(body.fields || {}).title) return err(res, 422, "Could not find a job title on this page.");
+        if (!b.base.title && !(body.fields || {}).title) return err(res, 422, "No job title was found on this page. Type one in, then save.", "invalid", undefined, "title");
         const ex = state.jobs.find((j) => j.url === body.url && j.ws === w);
         return send(res, 200, {
           method: b.method,
@@ -87,7 +87,7 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
         const b = build(body);
         const f = body.fields || {};
         const merged = { ...b.base, ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) };
-        if (!merged.title) return err(res, 422, "Could not find a job title on this page.");
+        if (!merged.title) return err(res, 422, "No job title was found on this page. Type one in, then save.", "invalid", undefined, "title");
         let job = state.jobs.find((j) => j.url === body.url && j.ws === w);
         const created = !job;
         if (!job) { job = { id: state.nextJob++, ws: w, url: body.url }; state.jobs.push(job); }
