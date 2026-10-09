@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JobHuntPA</title>
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <section id="setup" class="hidden">
+    <h1>JobHuntPA</h1>
+    <p>Connect this browser to your JobHuntPA server first.</p>
+    <button type="button" id="open-options" class="primary">Open Options</button>
+  </section>
+
+  <main id="main" class="hidden">
+    <header>
+      <h1>JobHuntPA</h1>
+      <div class="ws">
+        <label for="workspace">Workspace</label>
+        <select id="workspace"></select>
+      </div>
+      <p class="page-url" id="page-url"></p>
+    </header>
+
+    <div role="tablist" aria-label="What to add">
+      <button type="button" role="tab" id="tab-job" aria-controls="panel-job" aria-selected="true">Add job</button>
+      <button type="button" role="tab" id="tab-source" aria-controls="panel-source" aria-selected="false" tabindex="-1">Add source</button>
+    </div>
+
+    <section role="tabpanel" id="panel-job" aria-labelledby="tab-job">
+      <div id="job-status" class="status hidden" role="status" aria-live="polite"></div>
+      <form id="job-form" class="hidden" autocomplete="off">
+        <div id="job-existing" class="status warn hidden"></div>
+        <label for="f-title">Title</label>
+        <input id="f-title" maxlength="500">
+        <label for="f-company">Company</label>
+        <input id="f-company" maxlength="500">
+        <label for="f-location">Location</label>
+        <input id="f-location" maxlength="500">
+        <div class="row">
+          <div class="grow">
+            <label for="f-salary">Salary</label>
+            <input id="f-salary" maxlength="500">
+          </div>
+          <div class="grow">
+            <label for="f-mode">Work mode</label>
+            <select id="f-mode">
+              <option value="">Unknown</option>
+              <option value="onsite">On-site</option>
+              <option value="hybrid">Hybrid</option>
+              <option value="remote">Remote</option>
+            </select>
+          </div>
+        </div>
+        <label for="f-type">Employment type</label>
+        <input id="f-type" maxlength="40">
+        <label for="f-desc" id="desc-label">Description (preview)</label>
+        <textarea id="f-desc" class="desc" readonly></textarea>
+        <ul id="job-notes" class="notes"></ul>
+        <div class="actions-bar">
+          <button type="submit" id="job-save" class="primary">Save job</button>
+          <button type="button" id="job-reread" title="Read the page again, for example after selecting the description text">Read page again</button>
+        </div>
+      </form>
+      <div id="job-result" class="status ok hidden" role="status" aria-live="polite"></div>
+    </section>
+
+    <section role="tabpanel" id="panel-source" aria-labelledby="tab-source" class="hidden">
+      <form id="source-form" autocomplete="off">
+        <p class="small muted">A careers page or job board that JobHuntPA's searches should crawl.</p>
+        <label for="s-url">Page address</label>
+        <input id="s-url" type="url" required maxlength="2048">
+        <label for="s-label">Label (optional)</label>
+        <input id="s-label" maxlength="200">
+        <div class="actions-bar">
+          <button type="submit" id="source-add" class="primary">Add source</button>
+          <button type="button" id="source-test" class="hidden">Test</button>
+        </div>
+      </form>
+      <div id="source-status" class="status hidden" role="status" aria-live="polite"></div>
+    </section>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

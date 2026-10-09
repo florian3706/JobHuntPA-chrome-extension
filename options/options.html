@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JobHuntPA Options</title>
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <h1>JobHuntPA extension</h1>
+  <p>Add the page you are looking at to your own JobHuntPA server, as a job or as a company source.</p>
+
+  <h2>How to connect</h2>
+  <ol>
+    <li>In JobHuntPA open <strong>Settings</strong>, then <strong>Browser extension</strong>, then <strong>Connect a browser extension</strong>.</li>
+    <li>Copy the server address and the extension key shown there (the key is shown only once).</li>
+    <li>Paste both below and press <strong>Connect</strong>. The browser asks whether this extension may talk to your server; allow it.</li>
+  </ol>
+
+  <form id="connect-form" class="card" autocomplete="off">
+    <label for="server">Server address</label>
+    <input id="server" type="text" inputmode="url" spellcheck="false" placeholder="http://127.0.0.1:8000" autocapitalize="off">
+    <p class="hint">For example <code>http://127.0.0.1:8000</code>, <code>http://raspberrypi.local:8000</code> or <code>https://my-pc.tailnet.ts.net</code>.</p>
+
+    <label for="key">Extension key</label>
+    <div class="row">
+      <input id="key" class="grow" type="password" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="jhpa_…">
+      <button type="button" id="toggle-key" aria-pressed="false">Show</button>
+    </div>
+
+    <div class="actions-bar">
+      <button type="button" id="connect" class="primary">Connect</button>
+      <button type="button" id="disconnect" class="hidden">Disconnect</button>
+    </div>
+    <div id="status" class="status hidden" role="status" aria-live="polite"></div>
+
+    <div id="ws-box" class="hidden">
+      <label for="workspace">Workspace used by default</label>
+      <select id="workspace"></select>
+      <p class="hint">You can also switch workspace in the extension's popup.</p>
+    </div>
+  </form>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
