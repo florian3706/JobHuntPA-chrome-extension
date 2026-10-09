@@ -3,7 +3,7 @@
 `e2e.cjs` loads the unpacked extension into real Chromium (Playwright, new headless mode), connects it
 through the options page, and exercises: capture of a page with JSON-LD and one without, preview, edit,
 save, update of an existing job, selected text, workspace switch, add source, test source, 409, restricted
-pages, 401 / 423 / 429, stale workspace, bad key, disconnect and "server down".
+pages, 401 / 423 / 429 (rate and "busy"), stale and vanished workspaces (popup and options notices), "saved but filtered out" note, bad key, disconnect and "server down".
 
 Setup (once, outside the extension folder or here; `node_modules` is git-ignored):
 

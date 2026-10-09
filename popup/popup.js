@@ -10,6 +10,7 @@ let page = null; // captured page, reused for save and when the workspace change
 let preview = null;
 let previewSeq = 0;
 let source = null; // { id, url } once the page is a source
+let statusReady = Promise.resolve(); // the latest status call; nothing is sent to a workspace before it finished
 
 const TIMEOUT = { status: 15000, preview: 40000, save: 40000, source: 30000, test: 90000 };
 
@@ -173,15 +174,34 @@ async function startJob(recapture) {
 }
 
 /** Validates the key and refreshes the workspace list. Throws ApiError. */
-async function refreshStatus() {
+function refreshStatus() {
+  statusReady = loadStatus();
+  statusReady.catch(() => {}); // callers handle the error; this keeps the stored promise from being "unhandled"
+  return statusReady;
+}
+
+async function loadStatus() {
   const s = await api(cfg, "GET", "/api/extension/status", undefined, { timeout: TIMEOUT.status });
   const list = Array.isArray(s.workspaces) ? s.workspaces.map((w) => ({ id: w.id, name: String(w.name) })) : [];
   cfg.workspaces = list;
-  if (!list.some((w) => w.id === cfg.workspace)) {
+  let notice = "";
+  if (cfg.workspace != null && !list.some((w) => w.id === cfg.workspace)) {
+    // The saved workspace is gone (the server still answers 200): switch before anything is previewed or saved.
     cfg.workspace = list.some((w) => w.id === s.default_workspace) ? s.default_workspace : list[0]?.id ?? null;
+    const now = list.find((w) => w.id === cfg.workspace);
+    if (now) notice = `The workspace you picked is gone; using ${now.name}.`;
+  } else if (cfg.workspace == null && list.length) {
+    cfg.workspace = list.some((w) => w.id === s.default_workspace) ? s.default_workspace : list[0].id;
   }
   await saveConfig({ workspaces: list, workspace: cfg.workspace, expiresAt: s.expires_at || "" });
   fillWorkspaces();
+  const box = $("#ws-notice");
+  if (notice) {
+    box.textContent = notice;
+    show(box);
+  } else {
+    show(box, false);
+  }
 }
 
 function pageBody(fields) {
@@ -292,6 +312,15 @@ async function onSaveJob(e) {
       el("p", {}, document.createTextNode(`${verb} — `), serverAnchor("Open in JobHuntPA", r.link || "")),
       el("p", { class: "small muted", text: [r.title, r.company].filter(Boolean).join(" · ") }),
     );
+    if (typeof r.excluded_reason === "string" && r.excluded_reason.trim()) {
+      result.append(
+        el("p", {
+          class: "small",
+          text: "The job is saved, but your search filters exclude it, so it only shows in JobHuntPA's Jobs list with \u201cShow excluded\u201d ticked.",
+        }),
+        el("p", { class: "small muted", id: "excluded-reason", text: r.excluded_reason.trim() }),
+      );
+    }
     show(result);
     result.querySelector("a")?.focus();
   } catch (err) {
@@ -323,6 +352,7 @@ async function onAddSource(e) {
   setStatus(status, "Adding…", { busy: true });
   show(status);
   try {
+    await statusReady; // the workspace may still be checked; a failure is reported below
     if (!(await hasServerAccess(cfg.server))) {
       setStatus(status, "No permission for your JobHuntPA server yet. Grant it in Options.", { kind: "error", optionsLink: true });
       return;

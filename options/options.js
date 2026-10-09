@@ -27,12 +27,38 @@ function renderConnected(cfg) {
   if (cfg.workspace != null) sel.value = String(cfg.workspace);
 }
 
+/** The workspace to use given the account's list: the stored one if it still exists, else the default. */
+function pickWorkspace(stored, workspaces, defaultId) {
+  if (stored != null && workspaces.some((w) => w.id === stored)) return { id: stored, gone: "" };
+  const id = workspaces.some((w) => w.id === defaultId) ? defaultId : workspaces[0]?.id ?? null;
+  const now = workspaces.find((w) => w.id === id);
+  return { id, gone: stored != null && now ? `The workspace you picked is gone; using ${now.name}.` : "" };
+}
+
 async function init() {
   const cfg = await loadConfig();
   renderConnected(cfg);
   if (cfg) {
     const until = cfg.expiresAt ? ` Key valid until ${new Date(cfg.expiresAt).toLocaleDateString()}.` : "";
     setStatus(`Connected to ${cfg.server}${cfg.label ? ` as "${cfg.label}"` : ""}.${until}`, "ok");
+    await checkWorkspace(cfg);
+  }
+}
+
+/** Best effort: if the stored workspace no longer exists, switch to the default and say so. */
+async function checkWorkspace(cfg) {
+  try {
+    const s = await api(cfg, "GET", "/api/extension/status", undefined, { timeout: 15000 });
+    if (current !== cfg) return; // disconnected or reconnected meanwhile
+    const workspaces = (Array.isArray(s.workspaces) ? s.workspaces : []).map((w) => ({ id: w.id, name: String(w.name) }));
+    const pick = pickWorkspace(cfg.workspace, workspaces, s.default_workspace);
+    await saveConfig({ workspaces, workspace: pick.id, expiresAt: s.expires_at || "" });
+    if (pick.gone) {
+      renderConnected(await loadConfig());
+      setStatus(pick.gone, "warn");
+    }
+  } catch {
+    /* offline or key revoked: Connect or the popup will say so */
   }
 }
 
@@ -104,15 +130,18 @@ async function connect(server, key, grantedPromise) {
       return;
     }
     const workspaces = (Array.isArray(s.workspaces) ? s.workspaces : []).map((w) => ({ id: w.id, name: String(w.name) }));
-    const keep = workspaces.find((w) => w.id === probe.workspace);
-    const workspace = keep ? keep.id : workspaces.some((w) => w.id === s.default_workspace) ? s.default_workspace : workspaces[0]?.id ?? null;
+    const pick = pickWorkspace(probe.workspace, workspaces, s.default_workspace);
+    const workspace = pick.id;
     const oldServer = current?.server;
     await saveConfig({ server, key, workspace, workspaces, label: s.label || "", expiresAt: s.expires_at || "" });
     if (oldServer && oldServer !== server) {
       ext.permissions.remove({ origins: [originPattern(oldServer)] }).catch(() => {});
     }
     renderConnected(await loadConfig());
-    setStatus(`Connected to ${server}${s.label ? ` as "${s.label}"` : ""}. You can close this page and use the toolbar button.`, "ok");
+    setStatus(
+      `Connected to ${server}${s.label ? ` as "${s.label}"` : ""}. You can close this page and use the toolbar button.` + (pick.gone ? ` ${pick.gone}` : ""),
+      pick.gone ? "warn" : "ok",
+    );
   } finally {
     $("#connect").disabled = false;
   }

@@ -67,11 +67,15 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
       if (req.headers.authorization !== `Bearer ${KEY}` || state.mode === "revoked") return err(res, 401, "This extension key is not valid.", "token_invalid");
       if (state.mode === "busy") return err(res, 423, "The server is encrypting your data. Try again in a few minutes.", "encrypting");
       if (state.mode === "rate") return err(res, 429, "Too many tries with keys that don't work. Try again in 7 seconds.", "rate_limited", { "Retry-After": "7" });
+      // "readbusy": the one-at-a-time limit for reading pages (preview and save only)
+      if (state.mode === "readbusy" && req.method === "POST" && /^\/api\/extension\/(preview|jobs)$/.test(url.pathname))
+        return err(res, 429, "JobHuntPA is already reading another page. Try again in a few seconds.", "busy", { "Retry-After": "5" });
       const w = ws(req);
       if (url.pathname !== "/api/extension/status" && !WORKSPACES.some((x) => x.id === w)) return err(res, 404, "Workspace not found.");
 
       if (req.method === "GET" && url.pathname === "/api/extension/status")
-        return send(res, 200, { ok: true, api: 1, app_version: "1.13.0", label: "Test browser", expires_at: "2027-10-09T12:00:00Z", workspaces: WORKSPACES, default_workspace: 1 });
+        // "wsgone": the account no longer has the workspace the extension stored (the server still answers 200).
+        return send(res, 200, { ok: true, api: 1, app_version: "1.13.0", label: "Test browser", expires_at: "2027-10-09T12:00:00Z", workspaces: state.mode === "wsgone" ? WORKSPACES.slice(1) : WORKSPACES, default_workspace: state.mode === "wsgone" ? 3 : 1 });
       if (req.method === "POST" && url.pathname === "/api/extension/preview") {
         const b = build(body);
         if (!b.base.title && !(body.fields || {}).title) return err(res, 422, "No job title was found on this page. Type one in, then save.", "invalid", undefined, "title");
@@ -92,7 +96,9 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
         const created = !job;
         if (!job) { job = { id: state.nextJob++, ws: w, url: body.url }; state.jobs.push(job); }
         Object.assign(job, merged);
-        return send(res, created ? 201 : 200, { job_id: job.id, created, title: job.title, company: job.company, link: `/job.html?id=${job.id}&ws=${w}` });
+        return send(res, created ? 201 : 200, { job_id: job.id, created, title: job.title, company: job.company, link: `/job.html?id=${job.id}&ws=${w}`,
+          // "excluded_reason": only for the plain test page; null otherwise (older servers omit the field)
+          excluded_reason: /job-plain/.test(body.url || "") ? "Your search excludes jobs located in Hamburg." : null });
       }
       if (req.method === "GET" && url.pathname === "/api/sources") return send(res, 200, state.sources.filter((s) => s.ws === w));
       if (req.method === "POST" && url.pathname === "/api/sources") {

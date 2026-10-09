@@ -137,6 +137,9 @@ function pagesServer() {
     eq("edited work mode was sent", j.work_mode, "hybrid");
   }
   const [opened] = await Promise.all([ctx.waitForEvent("page"), popup.click("#job-result a")]);
+  if (!REAL) {
+    check("no excluded note when the field is null", !/exclude/.test(resultText) && (await popup.locator("#excluded-reason").count()) === 0, resultText);
+  }
   check("link opens the configured server origin", opened.url().startsWith(serverUrl) || (await opened.waitForURL(/./).then(() => opened.url().startsWith(serverUrl))), opened.url());
   await opened.close();
 
@@ -167,6 +170,13 @@ function pagesServer() {
   await popup.click("#job-save");
   await popup.waitForSelector("#job-result:not(.hidden)");
   check("plain page saved", /Saved/.test(await popup.textContent("#job-result")));
+  if (!REAL) {
+    const rt = await popup.textContent("#job-result");
+    check("excluded: note says saved but filtered out", /saved, but your search filters exclude it/.test(rt) && /Show excluded/.test(rt), rt);
+    eq("excluded: server's reason shown", await popup.textContent("#excluded-reason"), "Your search excludes jobs located in Hamburg.");
+    check("excluded: Open link still there", (await popup.locator("#job-result a").count()) === 1);
+    check("excluded: inside the live region", (await popup.getAttribute("#job-result", "aria-live")) === "polite");
+  }
 
   // ---- Workspace switch ----
   if (!REAL) {
@@ -256,6 +266,56 @@ function pagesServer() {
     popup = await openPopup(ldTab);
     await popup.waitForSelector("#job-form:not(.hidden)");
     eq("stale workspace falls back to the default", (await storage()).workspace, 1);
+    eq("stale workspace: notice shown", await popup.textContent("#ws-notice"), "The workspace you picked is gone; using Main search.");
+    eq("stale workspace: notice is a live region", await popup.getAttribute("#ws-notice", "aria-live"), "polite");
+    await popup.close();
+
+    // the server lists the account's workspaces without the stored one (answers 200 for the unknown id)
+    await reset();
+    await mode("wsgone");
+    await sw.evaluate(() => chrome.storage.local.set({ workspace: 1, workspaces: [{ id: 1, name: "Main search" }, { id: 3, name: "Plan B" }] }));
+    popup = await openPopup(ldTab);
+    await popup.waitForSelector("#job-form:not(.hidden)");
+    eq("gone workspace: switched to the default", (await storage()).workspace, 3);
+    eq("gone workspace: popup notice", await popup.textContent("#ws-notice"), "The workspace you picked is gone; using Plan B.");
+    eq("gone workspace: dropdown shows the new one", await popup.inputValue("#workspace"), "3");
+    await popup.click("#job-save");
+    await popup.waitForSelector("#job-result:not(.hidden)");
+    const sent = (await (await fetch(`${mock.url}/__state`)).json()).log.filter((x) => /preview|jobs$/.test(x.path));
+    check("gone workspace: preview and save used the new id only", sent.length === 2 && sent.every((x) => x.workspace === "3"), JSON.stringify(sent.map((x) => x.workspace)));
+    await popup.screenshot({ path: path.join(OUT, "popup-ws-gone.png") });
+    await popup.close();
+    // options page: same switch, with a notice
+    await sw.evaluate(() => chrome.storage.local.set({ workspace: 1, workspaces: [{ id: 1, name: "Main search" }, { id: 3, name: "Plan B" }] }));
+    await opt.reload();
+    await opt.waitForFunction(() => /workspace you picked is gone/.test(document.querySelector("#status").textContent));
+    eq("gone workspace: options notice", await opt.textContent("#status"), "The workspace you picked is gone; using Plan B.");
+    eq("gone workspace: options stored the default", (await storage()).workspace, 3);
+    eq("gone workspace: options dropdown", await opt.inputValue("#workspace"), "3");
+    await mode("ok");
+    await sw.evaluate(() => chrome.storage.local.set({ workspace: 1, workspaces: [{ id: 1, name: "Main search" }, { id: 3, name: "Plan B" }] }));
+    await opt.reload();
+
+    // 429 "busy": the one-at-a-time limit for reading pages
+    await mode("readbusy");
+    popup = await openPopup(ldTab);
+    await popup.waitForSelector("#job-status.error");
+    check("busy 429 on preview shows the server's sentence", /already reading another page/.test(await popup.textContent("#job-status")), await popup.textContent("#job-status"));
+    await mode("ok");
+    await popup.click("#job-status button:has-text('Try again')");
+    await popup.waitForSelector("#job-form:not(.hidden)");
+    check("busy 429: retry works", (await popup.inputValue("#f-title")).includes("Senior Analyst"));
+    await mode("readbusy");
+    await popup.click("#job-save");
+    await popup.waitForSelector("#job-status.error");
+    check("busy 429 on save shows the server's sentence", /already reading another page/.test(await popup.textContent("#job-status")), await popup.textContent("#job-status"));
+    check("busy 429 on save keeps the form and re-enables Save", !(await popup.isDisabled("#job-save")) && !(await popup.locator("#job-form").evaluate((n) => n.classList.contains("hidden"))));
+    await mode("ok");
+    await popup.click("#job-reread");
+    await popup.waitForFunction(() => document.querySelector("#job-status").classList.contains("hidden") && !document.querySelector("#job-form").classList.contains("hidden"));
+    await popup.click("#job-save");
+    await popup.waitForSelector("#job-result:not(.hidden)");
+    check("busy 429: Read page again then save works", /Updated|Saved/.test(await popup.textContent("#job-result")));
     await popup.close();
   }
 
