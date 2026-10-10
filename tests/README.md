@@ -1,9 +1,15 @@
 # End-to-end tests
 
 `e2e.cjs` loads the unpacked extension into real Chromium (Playwright, new headless mode), connects it
-through the options page, and exercises: capture of a page with JSON-LD and one without, preview, edit,
+through the options page, and exercises: reading the job in the browser from a JSON-LD page (also inside `@graph`),
+a SEEK-style `data-automation` page, a plain page, a 4 MB script-heavy page (the request must stay tiny and carry none of
+it), a selection and a page without a title; that the request is only `{url, canonical_url, job}` with plain-text values
+(the mock refuses anything else, as the v3 contract says); preview ("already saved?"), edit,
 save, update of an existing job, selected text, workspace switch, add source, test source, 409, restricted
 pages, 401 / 423 / 429 (rate and "busy"), stale and vanished workspaces (popup and options notices), "saved but filtered out" note, bad key, disconnect and "server down".
+
+Unit tests of the pure functions in `lib/extract.js` (JSON-LD to fields, HTML to text, titles, precedence, body
+building) need nothing installed: `node --test tests/extract.test.mjs`.
 
 Setup (once, outside the extension folder or here; `node_modules` is git-ignored):
 

@@ -1,13 +1,25 @@
-// Minimal JobHuntPA stand-in implementing the extension API contract (v1). Also serves ./pages for the tests.
+// Minimal JobHuntPA stand-in implementing the extension API contract (v3: the extension reads the page, the server gets only a finished job). Also serves ./pages for the tests.
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+
+/** A test page's HTML. job-huge.html gets megabytes of script and style filled in, like a real app page. */
+function readPage(name) {
+  const f = path.join(__dirname, "pages", path.basename(name));
+  if (!fs.existsSync(f)) return null;
+  let html = fs.readFileSync(f, "utf8");
+  if (html.includes("<!--HUGE-->")) {
+    const state = JSON.stringify({ session: { token: "SECRET-SESSION-TOKEN-123", user: "private.person@example.org" }, junk: "x".repeat(3000000) });
+    html = html.replace("<!--HUGE-->", `<script>window.__APP_STATE__=${state};</script><style>${".c{color:red}\n".repeat(80000)}</style>`);
+  }
+  return html;
+}
 
 const KEY = "jhpa_" + "A".repeat(43);
 const WORKSPACES = [{ id: 1, name: "Main search" }, { id: 3, name: "Plan B" }];
 
 function createMock({ port = 0, host = "127.0.0.1" } = {}) {
-  const state = { mode: "ok", jobs: [], sources: [], log: [], nextJob: 12, nextSource: 5 };
+  const state = { mode: "ok", jobs: [], sources: [], log: [], violations: [], nextJob: 12, nextSource: 5 };
   const send = (res, status, body, headers = {}) => {
     const data = typeof body === "string" ? body : JSON.stringify(body);
     res.writeHead(status, { "Content-Type": typeof body === "string" ? "text/html; charset=utf-8" : "application/json", ...headers });
@@ -15,54 +27,66 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
   };
   const err = (res, status, detail, code, headers, field) => send(res, status, { detail, ...(code ? { code } : {}), ...(field ? { field } : {}) }, headers);
 
-  function readJobLd(html) {
-    const m = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html);
-    if (!m) return null;
-    try {
-      const d = JSON.parse(m[1]);
-      if (d["@type"] !== "JobPosting") return null;
-      const a = d.jobLocation?.address || {};
-      const v = d.baseSalary?.value || {};
-      return {
-        title: d.title, company: d.hiringOrganization?.name || "",
-        location_text: [a.addressLocality, a.addressCountry].filter(Boolean).join(", "),
-        salary_text: v.minValue ? `${v.minValue}-${v.maxValue} ${d.baseSalary.currency}` : "",
-        employment_type: d.employmentType || "", work_mode: d.jobLocationType === "TELECOMMUTE" ? "remote" : "unknown",
-        description: d.description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
-      };
-    } catch { return null; }
+  // ---- contract v3: strict validation of the request body (preview and save share it) ----
+  const BODY_MAX = 512 * 1024;
+  const JOB_LIMITS = { title: 500, company: 500, location_text: 500, salary_text: 500, employment_type: 100, posted_at: 40, url: 2048, description: 100000, description_from: 20, method: 10 };
+  const WORK_MODES = ["onsite", "hybrid", "remote", "unknown", ""];
+  const FROM = ["selection", "structured", "site", "main", "body", ""];
+  const METHODS = ["jsonld", "site", "page", ""];
+  const HTML_TAG = /<\/?[a-z][a-z0-9]*(\s[^>]*)?>/i;
+  /** null when the body is fine, else [status, detail, code, field]. Anything not in the contract is refused. */
+  function validate(body, size) {
+    if (size > BODY_MAX) return [413, "Too large.", "too_large"];
+    if (!body || typeof body !== "object" || Array.isArray(body)) return [422, "Body must be an object.", "invalid"];
+    for (const k of Object.keys(body)) if (!["url", "canonical_url", "job"].includes(k)) return [422, `Unknown field ${k}.`, "invalid", k];
+    for (const k of ["url", "canonical_url"]) {
+      if (body[k] === undefined && k === "canonical_url") continue;
+      if (typeof body[k] !== "string" || !/^https?:\/\//.test(body[k])) return [422, `${k} must be an http(s) address.`, "invalid", k];
+      if (body[k].length > 2048) return [413, `${k} too long.`, "too_large", k];
+    }
+    const job = body.job === undefined ? {} : body.job;
+    if (!job || typeof job !== "object" || Array.isArray(job)) return [422, "job must be an object.", "invalid", "job"];
+    for (const [k, v] of Object.entries(job)) {
+      if (!(k in JOB_LIMITS) && k !== "work_mode") return [422, `Unknown field job.${k}.`, "invalid", k];
+      if (typeof v !== "string") return [422, `job.${k} must be text.`, "invalid", k];
+      if (k in JOB_LIMITS && v.length > JOB_LIMITS[k]) return [413, `job.${k} too long.`, "too_large", k];
+      if (k !== "url" && HTML_TAG.test(v)) { state.violations.push(`HTML in job.${k}: ${v.slice(0, 80)}`); return [422, `job.${k} must be plain text.`, "invalid", k]; }
+    }
+    if (!WORK_MODES.includes(job.work_mode || "")) return [422, "bad work_mode", "invalid", "work_mode"];
+    if (!FROM.includes(job.description_from || "")) return [422, "bad description_from", "invalid", "description_from"];
+    if (!METHODS.includes(job.method || "")) return [422, "bad method", "invalid", "method"];
+    return null;
   }
-  function readPlain(b) {
-    const title = (/<h1[^>]*>(.*?)<\/h1>/.exec(b.html || "") || [])[1] || (b.page_title || "").split(/ [|-] /)[0];
-    const company = (/<h2[^>]*>(.*?)<\/h2>/.exec(b.html || "") || [])[1] || "";
-    return { title, company, location_text: "", salary_text: "", employment_type: "", work_mode: /hybrid/i.test(b.text) ? "hybrid" : "unknown", description: (b.text || "").trim() };
-  }
-  function build(b) {
-    const ld = readJobLd(b.html || "");
-    const base = ld || readPlain(b);
-    const desc = b.selection ? b.selection : base.description;
-    const notes = b.selection ? ["Selected text will be used as the description."] : [];
-    if (!ld) notes.push("No structured job data found; read the page text.");
-    return { method: ld ? "jsonld" : "page", base, desc, descFrom: b.selection ? "selection" : ld ? "structured" : "page", notes };
+  /** Which URL is stored: SEEK jobs by id, else job.url / canonical on the same host as url, else url. */
+  function storedUrl(body) {
+    const u = new URL(body.url);
+    if (/(^|\.)seek\.(com\.au|co\.nz)$/.test(u.hostname)) {
+      const id = /\/job\/(\d+)/.exec(u.pathname) || /[?&]jobId=(\d+)/.exec(u.search);
+      if (id) return `https://www.seek.com.au/job/${id[1]}`;
+    }
+    for (const c of [(body.job || {}).url, body.canonical_url]) {
+      try { if (c && new URL(c).host === u.host) return c; } catch { /* next */ }
+    }
+    return body.url;
   }
   const ws = (req) => Number(req.headers["x-workspace"] || 1);
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://x");
     if (req.method === "GET" && url.pathname.startsWith("/pages/")) {
-      const f = path.join(__dirname, "pages", path.basename(url.pathname));
-      return fs.existsSync(f) ? send(res, 200, fs.readFileSync(f, "utf8")) : send(res, 404, "nope");
+      const html = readPage(path.basename(url.pathname));
+      return html != null ? send(res, 200, html) : send(res, 404, "nope");
     }
     if (url.pathname === "/__control") { state.mode = url.searchParams.get("mode") || "ok"; return send(res, 200, { mode: state.mode }); }
-    if (url.pathname === "/__state") return send(res, 200, { jobs: state.jobs, sources: state.sources, log: state.log });
-    if (url.pathname === "/__reset") { state.jobs = []; state.sources = []; state.log = []; state.mode = "ok"; return send(res, 200, { ok: true }); }
+    if (url.pathname === "/__state") return send(res, 200, { jobs: state.jobs, sources: state.sources, log: state.log, violations: state.violations });
+    if (url.pathname === "/__reset") { state.jobs = []; state.sources = []; state.log = []; state.violations = []; state.mode = "ok"; return send(res, 200, { ok: true }); }
 
     let raw = "";
     req.on("data", (c) => (raw += c));
     req.on("end", () => {
       let body = {};
       try { body = raw ? JSON.parse(raw) : {}; } catch { return err(res, 422, "Invalid JSON."); }
-      state.log.push({ method: req.method, path: url.pathname, auth: req.headers.authorization || "", workspace: req.headers["x-workspace"] || "", cookie: req.headers.cookie || "", origin: req.headers.origin || "", body });
+      state.log.push({ method: req.method, path: url.pathname, auth: req.headers.authorization || "", workspace: req.headers["x-workspace"] || "", cookie: req.headers.cookie || "", origin: req.headers.origin || "", bytes: Buffer.byteLength(raw), body });
       if (!url.pathname.startsWith("/api/")) return err(res, 404, "Not Found");
       if (req.headers.authorization !== `Bearer ${KEY}` || state.mode === "revoked") return err(res, 401, "This extension key is not valid.", "token_invalid");
       if (state.mode === "busy") return err(res, 423, "The server is encrypting your data. Try again in a few minutes.", "encrypting");
@@ -76,27 +100,20 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
       if (req.method === "GET" && url.pathname === "/api/extension/status")
         // "wsgone": the account no longer has the workspace the extension stored (the server still answers 200).
         return send(res, 200, { ok: true, api: 1, app_version: "1.13.0", label: "Test browser", expires_at: "2027-10-09T12:00:00Z", workspaces: state.mode === "wsgone" ? WORKSPACES.slice(1) : WORKSPACES, default_workspace: state.mode === "wsgone" ? 3 : 1 });
-      if (req.method === "POST" && url.pathname === "/api/extension/preview") {
-        const b = build(body);
-        if (!b.base.title && !(body.fields || {}).title) return err(res, 422, "No job title was found on this page. Type one in, then save.", "invalid", undefined, "title");
-        const ex = state.jobs.find((j) => j.url === body.url && j.ws === w);
-        return send(res, 200, {
-          method: b.method,
-          job: { ...b.base, posted_at: "", url: body.url, description_preview: b.desc.slice(0, 1500), description_chars: b.desc.length, description_from: b.descFrom },
-          existing: ex ? { id: ex.id, title: ex.title, status: "to_review", link: `/job.html?id=${ex.id}&ws=${w}` } : null,
-          notes: b.notes,
-        });
-      }
-      if (req.method === "POST" && url.pathname === "/api/extension/jobs") {
-        const b = build(body);
-        const f = body.fields || {};
-        const merged = { ...b.base, ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) };
-        if (!merged.title) return err(res, 422, "No job title was found on this page. Type one in, then save.", "invalid", undefined, "title");
-        let job = state.jobs.find((j) => j.url === body.url && j.ws === w);
-        const created = !job;
-        if (!job) { job = { id: state.nextJob++, ws: w, url: body.url }; state.jobs.push(job); }
-        Object.assign(job, merged);
-        return send(res, created ? 201 : 200, { job_id: job.id, created, title: job.title, company: job.company, link: `/job.html?id=${job.id}&ws=${w}`,
+      if (req.method === "POST" && /^\/api\/extension\/(preview|jobs)$/.test(url.pathname)) {
+        const bad = validate(body, Buffer.byteLength(raw));
+        if (bad) return err(res, bad[0], bad[1], bad[2], undefined, bad[3]);
+        const stored = storedUrl(body);
+        const existing = state.jobs.find((j) => j.url === stored && j.ws === w);
+        if (url.pathname.endsWith("/preview"))
+          return send(res, 200, { url: stored, existing: existing ? { id: existing.id, title: existing.title, status: "to_review", link: `/job.html?id=${existing.id}&ws=${w}` } : null });
+        const job = body.job || {};
+        if (!job.title) return err(res, 422, "No job title was found on this page. Type one in, then save.", "invalid", undefined, "title");
+        let row = existing;
+        const created = !row;
+        if (!row) { row = { id: state.nextJob++, ws: w, url: stored }; state.jobs.push(row); }
+        Object.assign(row, job, { url: stored });
+        return send(res, created ? 201 : 200, { job_id: row.id, created, title: row.title, company: row.company || "", link: `/job.html?id=${row.id}&ws=${w}`,
           // "excluded_reason": only for the plain test page; null otherwise (older servers omit the field)
           excluded_reason: /job-plain/.test(body.url || "") ? "Your search excludes jobs located in Hamburg." : null });
       }
@@ -122,5 +139,5 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
   return new Promise((resolve) => server.listen(port, host, () => resolve({ server, state, port: server.address().port, url: `http://${host}:${server.address().port}`, key: KEY, close: () => new Promise((r) => { server.closeAllConnections?.(); server.close(r); }) })));
 }
 
-module.exports = { createMock, KEY };
+module.exports = { createMock, KEY, readPage };
 if (require.main === module) createMock({ port: Number(process.env.PORT || 8000) }).then((m) => console.log(`mock JobHuntPA on ${m.url}\nkey ${m.key}`));

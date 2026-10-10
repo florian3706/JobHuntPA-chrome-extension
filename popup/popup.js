@@ -3,10 +3,11 @@ import { $, el, clear } from "../lib/dom.js";
 import { api, describeError, serverLink } from "../lib/api.js";
 import { loadConfig, saveConfig, hasServerAccess } from "../lib/config.js";
 import { activeTab, capturePage, CaptureError, isReadableUrl } from "../lib/capture.js";
+import { extractJob, buildBody, notesFor } from "../lib/extract.js";
 
 let cfg = null;
 let tab = null;
-let page = null; // captured page, reused for save and when the workspace changes
+let extracted = null; // the job read from the page, in this browser: { url, canonical_url, job }; reused for save
 let preview = null;
 let previewSeq = 0;
 let source = null; // { id, url } once the page is a source
@@ -137,7 +138,7 @@ function setupWorkspaceSelect() {
     source = null;
     show($("#source-test"), false);
     show($("#source-status"), false);
-    if (page) runPreview();
+    if (extracted) runPreview();
   });
 }
 
@@ -158,9 +159,11 @@ async function startJob(recapture) {
       });
       return;
     }
-    const [captured] = await Promise.all([recapture || !page ? capturePage(tab) : page, refreshStatus()]);
-    page = captured;
-    if (page.url && !$("#s-url").value) $("#s-url").value = page.url;
+    const reuse = !recapture && extracted;
+    const [captured] = await Promise.all([reuse ? null : capturePage(tab), refreshStatus()]);
+    if (!reuse) extracted = extractJob(captured); // all the reading and tidying happens here, on this computer
+    renderJob(extracted.job);
+    if (extracted.url && !$("#s-url").value) $("#s-url").value = extracted.url;
     await runPreview();
   } catch (err) {
     if (err instanceof CaptureError) {
@@ -204,70 +207,74 @@ async function loadStatus() {
   }
 }
 
-function pageBody(fields) {
-  return {
-    url: page.url,
-    page_title: page.page_title,
-    html: page.html,
-    text: page.text,
-    selection: page.selection,
-    fields: fields || {},
-  };
-}
-
+/** Asks the server only whether the job is already there; the form was filled from the page by this extension. */
 async function runPreview() {
   const seq = ++previewSeq;
   const status = $("#job-status");
-  show($("#job-form"), false);
   show($("#job-result"), false);
-  setStatus(status, "Asking JobHuntPA what job this page describes…", { busy: true });
+  setStatus(status, "Checking whether JobHuntPA already has this job…", { busy: true });
   show(status);
+  $("#job-save").disabled = true;
   try {
-    const r = await api(cfg, "POST", "/api/extension/preview", pageBody(), { timeout: TIMEOUT.preview });
+    const r = await api(cfg, "POST", "/api/extension/preview", buildBody(extracted), { timeout: TIMEOUT.preview });
     if (seq !== previewSeq) return;
     preview = r;
-    renderPreview(r);
+    renderExisting(r.existing);
+    show($("#job-form"));
     show(status, false);
+    $("#job-save").disabled = false;
   } catch (err) {
     if (seq !== previewSeq) return;
     if (err.status === 422 && err.field === "title") {
-      // No title could be read: let the user type one (and the rest); saving sends the page again.
-      preview = { job: {}, existing: null, notes: [err.detail || "No job title was found on this page. Type one in, then save."] };
-      renderPreview(preview);
+      // Nothing to look up without a title; the user types one and saves.
+      preview = { existing: null };
+      renderExisting(null);
       show(status, false);
+      $("#job-save").disabled = false;
       return;
     }
+    show($("#job-form"), false);
     setError(status, err, cfg, [["Try again", runPreview]]);
   }
 }
 
 const str = (v) => (v == null ? "" : String(v));
 
-function renderPreview(r) {
-  const job = r.job || {};
+/** Fills the form from the job this extension read from the page. */
+function renderJob(job) {
   $("#f-title").value = str(job.title);
   $("#f-company").value = str(job.company);
   $("#f-location").value = str(job.location_text);
   $("#f-salary").value = str(job.salary_text);
   $("#f-type").value = str(job.employment_type);
-  const mode = ["onsite", "hybrid", "remote"].includes(job.work_mode) ? job.work_mode : "";
-  $("#f-mode").value = mode;
-  $("#f-desc").value = str(job.description_preview);
-  const chars = Number(job.description_chars) || 0;
-  const from = { selection: "your selected text", structured: "the page's job data", page: "the page text" }[job.description_from];
+  $("#f-mode").value = ["onsite", "hybrid", "remote"].includes(job.work_mode) ? job.work_mode : "";
+  const desc = str(job.description);
+  $("#f-desc").value = desc.slice(0, 1500);
+  const from = {
+    selection: "your selected text",
+    structured: "the page's job data",
+    site: "the page's job description",
+    main: "the page text",
+    body: "the page text",
+  }[job.description_from];
   $("#desc-label").textContent =
-    "Description (preview" + (chars ? `, ${chars.toLocaleString()} characters` : "") + (from ? `, from ${from}` : "") + ")";
-
+    "Description (preview" + (desc ? `, ${desc.length.toLocaleString()} characters` : "") + (from ? `, from ${from}` : "") + ")";
   const notes = $("#job-notes");
   clear(notes);
-  for (const n of Array.isArray(r.notes) ? r.notes : []) notes.append(el("li", { text: String(n) }));
+  for (const n of notesFor(job)) notes.append(el("li", { text: n }));
+  show($("#job-existing"), false);
+  $("#job-save").textContent = "Save job";
+  show($("#job-form"));
+  $("#f-title").focus();
+}
 
+function renderExisting(existing) {
   const ex = $("#job-existing");
-  if (r.existing) {
+  if (existing) {
     clear(ex);
     ex.append(
-      el("p", {}, document.createTextNode("Already in JobHuntPA: "), serverAnchor(str(r.existing.title) || "open it", r.existing.link || ""),
-        document.createTextNode(r.existing.status ? ` (${r.existing.status}).` : ".")),
+      el("p", {}, document.createTextNode("Already in JobHuntPA: "), serverAnchor(str(existing.title) || "open it", existing.link || ""),
+        document.createTextNode(existing.status ? ` (${existing.status}).` : ".")),
       el("p", { class: "small", text: "Saving updates that job with the values below." }),
     );
     show(ex);
@@ -276,8 +283,6 @@ function renderPreview(r) {
     show(ex, false);
     $("#job-save").textContent = "Save job";
   }
-  show($("#job-form"));
-  $("#f-title").focus();
 }
 
 function collectFields() {
@@ -289,8 +294,7 @@ function collectFields() {
     employment_type: $("#f-type").value.trim(),
     work_mode: $("#f-mode").value,
   };
-  for (const k of Object.keys(f)) if (!f[k]) delete f[k];
-  return f;
+  return f; // an emptied field stays empty: the form is the job that gets sent
 }
 
 async function onSaveJob(e) {
@@ -298,12 +302,19 @@ async function onSaveJob(e) {
   const btn = $("#job-save");
   const result = $("#job-result");
   const status = $("#job-status");
+  const fields = collectFields();
+  if (!fields.title) {
+    setStatus(status, "No job title was found on this page. Type one in, then save.", { kind: "error" });
+    show(status);
+    $("#f-title").focus();
+    return;
+  }
   btn.disabled = true;
   show(result, false);
   setStatus(status, "Saving…", { busy: true });
   show(status);
   try {
-    const r = await api(cfg, "POST", "/api/extension/jobs", pageBody(collectFields()), { timeout: TIMEOUT.save });
+    const r = await api(cfg, "POST", "/api/extension/jobs", buildBody(extracted, fields), { timeout: TIMEOUT.save });
     show(status, false);
     clear(result);
     const verb = r.created === false ? "Updated the existing job" : "Saved";

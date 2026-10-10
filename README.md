@@ -3,10 +3,10 @@
 Browser extension for [JobHuntPA](https://github.com/florian3706/JobHuntPA), the self-hosted job-search
 app. From any web page you can:
 
-- **Add job**: send the page you are looking at to your JobHuntPA server. The server reads the posting
-  (title, company, location, salary, work mode, description); you check or edit the fields and save. If
-  the job is already there, the popup says so and lets you update it. Because the page is read in your own
-  browser, postings behind a sign-in work too.
+- **Add job**: the extension reads the posting in the page you are looking at (title, company, location,
+  salary, work mode, description), right in your browser, and fills in the form; you check or edit the fields
+  and save, and only the finished job is sent to your JobHuntPA server. If the job is already there, the popup
+  says so and lets you update it. Because the page is read in your own browser, postings behind a sign-in work too.
 - **Add source**: add a careers page or job board as a company source that JobHuntPA's searches crawl, with
   an optional label and a "Test" that shows how many postings were found and a few samples.
 
@@ -40,7 +40,7 @@ if the device is lost.
 | Permission | Why |
 | --- | --- |
 | `activeTab` | Read the page in the current tab, only when you open the popup. |
-| `scripting` | Run the small function that collects the page's URL, title, HTML, text and selection. |
+| `scripting` | Run the small function that reads the job out of the page in the current tab (its address, title, structured job data, the job description's text and your text selection). |
 | `storage` | Keep the server address, key and chosen workspace in `storage.local` (never synced). |
 | optional hosts `http://*/*`, `https://*/*` | Requested at runtime for **your server's address only**, when you press Connect. Nothing else is ever requested. |
 
@@ -48,14 +48,17 @@ There is no `<all_urls>` host permission, no content script on every page, no re
 
 ## Privacy
 
-The page you add (its URL, title, HTML, visible text and your text selection) is sent only to the JobHuntPA
-server you configured, and only when you open the popup on that page and use it. Requests carry the
-extension key as a bearer token; no cookies are sent. The extension talks to no other server and collects
-no data. The key is stored locally in `storage.local` and never logged.
+The page is read on your own computer. What is sent to the JobHuntPA server you configured is the job the
+extension found: the page address, the job's title, company, location, salary, work mode and posting date, the
+job description as plain text, and, if you selected text on the page, that selected text instead of the
+description. The page's HTML, its scripts and data, and the rest of the page's text are never sent. Sending
+happens only when you open the popup on a page and use it (to check whether the job is already saved, and
+when you press Save). Requests carry the extension key as a bearer token; no cookies are sent. The
+extension talks to no other server and collects no data. The key is stored locally in `storage.local` and never logged.
 
 ## Develop and test
 
 No build step, no dependencies. The code is plain ES modules; `lib/api.js` implements the HTTP API, `lib/capture.js`
-the page capture, `popup/` and `options/` the UI. End-to-end tests with a mock server (and how to run them
+the page capture (what is read out of the page), `lib/extract.js` the turning of that into the job that is sent, `popup/` and `options/` the UI. Unit tests: `node --test tests/extract.test.mjs`. End-to-end tests with a mock server (and how to run them
 against a real server) are in `tests/README.md`. The Firefox repository has the same source except
 `manifest.json`.

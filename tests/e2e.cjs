@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const http = require("http");
 const { chromium } = require("playwright");
-const { createMock } = require("./mock-server.cjs");
+const { createMock, readPage } = require("./mock-server.cjs");
 
 const REAL = !!process.env.JHPA_SERVER;
 const EXT_SRC = path.resolve(__dirname, "..");
@@ -31,8 +31,8 @@ function copyExtension(dest, hosts) {
 function pagesServer() {
   return new Promise((resolve) => {
     const s = http.createServer((req, res) => {
-      const f = path.join(__dirname, "pages", path.basename(req.url.split("?")[0]));
-      if (fs.existsSync(f)) { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(fs.readFileSync(f)); }
+      const html = readPage(path.basename(req.url.split("?")[0]));
+      if (html != null) { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); res.end(html); }
       else { res.writeHead(404); res.end("no"); }
     }).listen(0, "127.0.0.1", () => resolve({ url: `http://127.0.0.1:${s.address().port}`, close: () => s.close() }));
   });
@@ -47,7 +47,7 @@ function pagesServer() {
   if (!key) throw new Error("JHPA_KEY is required with JHPA_SERVER");
   const serverHost = new URL(serverUrl).hostname;
   const extDir = fs.mkdtempSync(path.join(os.tmpdir(), "jhpa-ext-"));
-  copyExtension(extDir, [`http://${serverHost}/*`, `https://${serverHost}/*`, "http://127.0.0.1/*", "http://localhost/*"]);
+  copyExtension(extDir, [`http://${serverHost}/*`, `https://${serverHost}/*`, "http://127.0.0.1/*", "http://localhost/*", "https://www.seek.com.au/*"]);
 
   const ctx = await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(), "jhpa-prof-")), {
     executablePath: process.env.CHROME_BIN || undefined,
@@ -68,7 +68,14 @@ function pagesServer() {
   console.log(`extension ${extId}, server ${serverUrl} (${REAL ? "real" : "mock"})`);
   for (const p of ctx.pages()) if (p.url().includes("options")) await p.close(); // opened on install
 
-  const reset = async () => { if (mock) await fetch(`${mock.url}/__reset`); };
+  const seenBodies = [], seenViolations = []; // kept across resets, for the final checks
+  const reset = async () => {
+    if (!mock) return;
+    const st0 = await (await fetch(`${mock.url}/__state`)).json();
+    seenBodies.push(...st0.log.filter((x) => /extension\/(preview|jobs)$/.test(x.path)));
+    seenViolations.push(...st0.violations);
+    await fetch(`${mock.url}/__reset`);
+  };
   const mode = async (m) => { if (mock) await fetch(`${mock.url}/__control?mode=${m}`); };
   const storage = () => sw.evaluate(() => chrome.storage.local.get(null));
 
@@ -107,21 +114,45 @@ function pagesServer() {
     await popup.goto(`${base}/popup/popup.html`);
     return popup;
   }
-  const newJobTab = async (p) => { const t = await ctx.newPage(); await t.goto(`${pagesUrl}/pages/${p}`); return t; };
+  // The form shows as soon as the extension has read the page; "ready" also waits for the "already there?" check.
+  const ready = async (pp, timeout = 20000) => {
+    await pp.waitForSelector("#job-form:not(.hidden)", { timeout });
+    await pp.waitForSelector("#job-save:not([disabled])", { timeout });
+  };
+  const state = async () => (await fetch(`${mock.url}/__state`)).json();
+  const lastBody = async (re = /preview$/) => { const l = (await state()).log.filter((x) => re.test(x.path)); return l[l.length - 1]; };
+  const HTML_TAG = /<\/?[a-z][a-z0-9]*(\s[^>]*)?>/i;
+  const sizes = [];
+  // SEEK pages live on seek.com.au: answer that address from the test page file (no network involved)
+  await ctx.route("https://www.seek.com.au/job/12345678", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: readPage("job-seek.html") }));
+  const newJobTab = async (p) => { const t = await ctx.newPage(); await t.goto(/^https:/.test(p) ? p : `${pagesUrl}/pages/${p}`); return t; };
 
   // ---- Job from a page with JSON-LD ----
   await reset();
   const ldTab = await newJobTab("job-ld.html");
   let popup = await openPopup(ldTab);
-  await popup.waitForSelector("#job-form:not(.hidden)", { timeout: 20000 });
+  await ready(popup);
   eq("preview: title", await popup.inputValue("#f-title"), "Senior Analyst");
   eq("preview: company", await popup.inputValue("#f-company"), REAL ? await popup.inputValue("#f-company") : "Example Corp");
   check("preview: description present", (await popup.inputValue("#f-desc")).length > 20);
   check("popup shows the page url", (await popup.textContent("#page-url")).includes("job-ld.html"));
   await popup.screenshot({ path: path.join(OUT, "popup-job.png") });
+  eq("form: location from the address parts", await popup.inputValue("#f-location"), "Berlin, BE, DE");
+  eq("form: salary from baseSalary", await popup.inputValue("#f-salary"), "EUR 60,000–75,000 per year");
+  eq("form: employment type", await popup.inputValue("#f-type"), "Full time");
+  eq("form: TELECOMMUTE is remote", await popup.inputValue("#f-mode"), "remote");
+  const descPreview = await popup.inputValue("#f-desc");
+  check("form: JSON-LD description shown as text with list items", descPreview.includes("reporting stack & work") && descPreview.includes("- SQL\n- Python") && !HTML_TAG.test(descPreview), descPreview);
+  check("form: says where the description came from", /from the page's job data/.test(await popup.textContent("#desc-label")), await popup.textContent("#desc-label"));
   if (!REAL) {
-    const req = (await (await fetch(`${mock.url}/__state`)).json()).log.find((x) => x.path === "/api/extension/preview");
-    check("preview body carries html+text+title", req.body.html.includes("ld+json") && req.body.text.includes("Analyse") && req.body.page_title.startsWith("Senior Analyst"));
+    const req = await lastBody();
+    const j = req.body.job;
+    eq("preview body: only url and job", Object.keys(req.body).join(","), "url,job");
+    check("preview body: no html/text/fields", !("html" in req.body) && !("text" in req.body) && !("fields" in req.body) && !("html" in j) && !("text" in j));
+    check("preview body: small", req.bytes < 5000, String(req.bytes));
+    sizes.push(["JSON-LD page", req.bytes]);
+    check("preview body: job values", j.title === "Senior Analyst" && j.company === "Example Corp" && j.salary_text === "EUR 60,000–75,000 per year" && j.work_mode === "remote" && j.posted_at === "2026-09-30" && j.method === "jsonld" && j.description_from === "structured", JSON.stringify(j));
+    check("preview body: description is plain text", j.description.includes("- SQL\n- Python") && !HTML_TAG.test(j.description), j.description);
     eq("preview: X-Workspace sent", req.workspace, "1");
     eq("preview: no origin/cookie leak", req.cookie, "");
   }
@@ -146,7 +177,7 @@ function pagesServer() {
   // Same page again -> already exists
   await popup.close();
   popup = await openPopup(ldTab);
-  await popup.waitForSelector("#job-form:not(.hidden)");
+  await ready(popup);
   check("existing job is announced", /Already in JobHuntPA/.test(await popup.textContent("#job-existing")));
   eq("button says Update", await popup.textContent("#job-save"), "Update job");
   await popup.click("#job-save");
@@ -157,15 +188,29 @@ function pagesServer() {
   await ldTab.bringToFront();
   await ldTab.evaluate(() => { const r = document.createRange(); r.selectNodeContents(document.getElementById("sel")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); });
   await popup.click("#job-reread");
-  await popup.waitForSelector("#job-form:not(.hidden)");
-  check("selection reaches the server", REAL || (await popup.inputValue("#f-desc")).includes("Select this sentence"), await popup.inputValue("#f-desc"));
+  await ready(popup);
+  check("selection reaches the form", (await popup.inputValue("#f-desc")).includes("Select this sentence"), await popup.inputValue("#f-desc"));
+  check("selection: description says it comes from the selected text", /from your selected text/.test(await popup.textContent("#desc-label")), await popup.textContent("#desc-label"));
+  check("selection: note shown", /Selected text will be used/.test(await popup.textContent("#job-notes")), await popup.textContent("#job-notes"));
+  if (!REAL) {
+    const j = (await lastBody()).body.job;
+    check("selection: sent as the whole description, nothing else of the page", j.description === "Select this sentence to use it as the description." && j.description_from === "selection", JSON.stringify(j.description));
+  }
   await popup.close();
 
   // ---- Job from a page without structured data ----
   const plainTab = await newJobTab("job-plain.html");
   popup = await openPopup(plainTab);
-  await popup.waitForSelector("#job-form:not(.hidden)");
-  check("plain page: title found", (await popup.inputValue("#f-title")).includes("Data Engineer"));
+  await ready(popup);
+  eq("plain page: title from the heading", await popup.inputValue("#f-title"), "Data Engineer");
+  eq("plain page: work mode from a plain hint in the text", await popup.inputValue("#f-mode"), "hybrid");
+  check("plain page: note says values come from the page", /No structured job data/.test(await popup.textContent("#job-notes")), await popup.textContent("#job-notes"));
+  check("plain page: description is the page text", /build pipelines/.test(await popup.inputValue("#f-desc")) && /from the page text/.test(await popup.textContent("#desc-label")), await popup.textContent("#desc-label"));
+  if (!REAL) {
+    const req = await lastBody();
+    check("plain page: method page, small body", req.body.job.method === "page" && req.body.job.description_from === "body" && req.bytes < 3000, JSON.stringify(req.body.job));
+    sizes.push(["plain page", req.bytes]);
+  }
   await popup.fill("#f-company", "Acme Ltd");
   await popup.click("#job-save");
   await popup.waitForSelector("#job-result:not(.hidden)");
@@ -181,19 +226,78 @@ function pagesServer() {
   // ---- Workspace switch ----
   if (!REAL) {
     await popup.selectOption("#workspace", "3");
-    await popup.waitForFunction(() => document.querySelector("#job-existing").classList.contains("hidden") && !document.querySelector("#job-form").classList.contains("hidden"));
+    await ready(popup);
     eq("switching workspace re-runs preview (no existing job there)", await popup.textContent("#job-save"), "Save job");
     eq("workspace choice persisted", (await storage()).workspace, 3);
     await popup.selectOption("#workspace", "1");
+    await ready(popup);
+    eq("switching back finds the job again", await popup.textContent("#job-save"), "Update job");
   }
   await popup.close();
+
+  // ---- JSON-LD inside @graph (with a broken script before it), HTML-encoded description, several locations ----
+  const graphTab = await newJobTab("job-graph.html");
+  popup = await openPopup(graphTab);
+  await ready(popup);
+  eq("graph: title", await popup.inputValue("#f-title"), "Platform Engineer");
+  eq("graph: company", await popup.inputValue("#f-company"), "Graphly");
+  eq("graph: locations joined", await popup.inputValue("#f-location"), "Leeds, GB; Remote, GB");
+  eq("graph: single salary value", await popup.inputValue("#f-salary"), "GBP 65,000 per year");
+  eq("graph: employment types", await popup.inputValue("#f-type"), "Full time, Contract");
+  eq("graph: description of an entity-encoded posting is text", await popup.inputValue("#f-desc"), "Build the platform.\n\nKeep it running.");
+  if (!REAL) {
+    const req = await lastBody();
+    check("graph: body", req.body.job.method === "jsonld" && req.bytes < 3000, JSON.stringify(req.body.job));
+    sizes.push(["@graph page", req.bytes]);
+  }
+  await popup.close();
+  await graphTab.close();
+
+  // ---- SEEK-style markup (served for https://www.seek.com.au/job/12345678) ----
+  const seekTab = await newJobTab("https://www.seek.com.au/job/12345678");
+  popup = await openPopup(seekTab);
+  await ready(popup);
+  eq("seek: title from data-automation", await popup.inputValue("#f-title"), "Marketing Coordinator");
+  eq("seek: company", await popup.inputValue("#f-company"), "Brightside Pty Ltd");
+  eq("seek: location", await popup.inputValue("#f-location"), "Sydney NSW");
+  eq("seek: salary", await popup.inputValue("#f-salary"), "$80,000 - $90,000 per year");
+  eq("seek: work type", await popup.inputValue("#f-type"), "Full time");
+  const seekDesc = await popup.inputValue("#f-desc");
+  check("seek: description is the ad's element only (not the sidebar)", seekDesc.includes("Plan campaigns") && seekDesc.includes("Events") && !/Similar jobs/.test(seekDesc), seekDesc);
+  check("seek: description from the page's job description", /from the page's job description/.test(await popup.textContent("#desc-label")), await popup.textContent("#desc-label"));
+  await popup.click("#job-save");
+  await popup.waitForSelector("#job-result:not(.hidden)");
+  if (!REAL) {
+    const req = await lastBody(/jobs$/);
+    check("seek: body", req.body.job.method === "site" && req.body.url === "https://www.seek.com.au/job/12345678" && req.bytes < 3000, JSON.stringify(req.body));
+    sizes.push(["SEEK-style page", req.bytes]);
+    check("seek: stored under the canonical SEEK address", (await state()).jobs.some((j) => j.url === "https://www.seek.com.au/job/12345678" && j.title === "Marketing Coordinator"));
+  }
+  await popup.close();
+  await seekTab.close();
+
+  // ---- A heavy page: megabytes of inline script (with app state) and style ----
+  const hugeTab = await newJobTab("job-huge.html");
+  const hugeHtmlSize = await hugeTab.evaluate(() => document.documentElement.outerHTML.length);
+  check("huge page really is huge", hugeHtmlSize > 3000000, String(hugeHtmlSize));
+  popup = await openPopup(hugeTab);
+  await ready(popup, 30000);
+  eq("huge: title", await popup.inputValue("#f-title"), "Backend Developer");
+  if (!REAL) {
+    const req = await lastBody();
+    check("huge: payload stays small", req.bytes < 3000, `${req.bytes} bytes`);
+    check("huge: nothing of the scripts or app state is sent", !/SECRET-SESSION-TOKEN|private\.person|window\.__APP_STATE__|color:red/.test(JSON.stringify(req.body)));
+    sizes.push([`heavy page (${(hugeHtmlSize / 1e6).toFixed(1)} MB of HTML)`, req.bytes]);
+  }
+  await popup.close();
+  await hugeTab.close();
 
   // ---- Page without any detectable title: the user types one ----
   const noTitleTab = await newJobTab("job-notitle.html");
   popup = await openPopup(noTitleTab);
-  await popup.waitForSelector("#job-form:not(.hidden)");
+  await ready(popup);
   eq("no title: field left empty", await popup.inputValue("#f-title"), "");
-  check("no title: server's hint shown", /No job title was found/.test(await popup.textContent("#job-notes")), await popup.textContent("#job-notes"));
+  check("no title: hint shown", /No job title was found/.test(await popup.textContent("#job-notes")), await popup.textContent("#job-notes"));
   await popup.click("#job-save");
   await popup.waitForSelector("#job-status.error");
   check("no title: saving without one explains why", /No job title was found/.test(await popup.textContent("#job-status")), await popup.textContent("#job-status"));
@@ -264,7 +368,7 @@ function pagesServer() {
     // workspace that no longer exists
     await sw.evaluate(() => chrome.storage.local.set({ workspace: 99, workspaces: [{ id: 99, name: "Gone" }] }));
     popup = await openPopup(ldTab);
-    await popup.waitForSelector("#job-form:not(.hidden)");
+    await ready(popup);
     eq("stale workspace falls back to the default", (await storage()).workspace, 1);
     eq("stale workspace: notice shown", await popup.textContent("#ws-notice"), "The workspace you picked is gone; using Main search.");
     eq("stale workspace: notice is a live region", await popup.getAttribute("#ws-notice", "aria-live"), "polite");
@@ -275,7 +379,7 @@ function pagesServer() {
     await mode("wsgone");
     await sw.evaluate(() => chrome.storage.local.set({ workspace: 1, workspaces: [{ id: 1, name: "Main search" }, { id: 3, name: "Plan B" }] }));
     popup = await openPopup(ldTab);
-    await popup.waitForSelector("#job-form:not(.hidden)");
+    await ready(popup);
     eq("gone workspace: switched to the default", (await storage()).workspace, 3);
     eq("gone workspace: popup notice", await popup.textContent("#ws-notice"), "The workspace you picked is gone; using Plan B.");
     eq("gone workspace: dropdown shows the new one", await popup.inputValue("#workspace"), "3");
@@ -303,7 +407,7 @@ function pagesServer() {
     check("busy 429 on preview shows the server's sentence", /already reading another page/.test(await popup.textContent("#job-status")), await popup.textContent("#job-status"));
     await mode("ok");
     await popup.click("#job-status button:has-text('Try again')");
-    await popup.waitForSelector("#job-form:not(.hidden)");
+    await ready(popup);
     check("busy 429: retry works", (await popup.inputValue("#f-title")).includes("Senior Analyst"));
     await mode("readbusy");
     await popup.click("#job-save");
@@ -347,6 +451,13 @@ function pagesServer() {
   await popup.screenshot({ path: path.join(OUT, "popup-down.png") });
   await popup.close();
 
+  if (!REAL) {
+    await reset();
+    const bodies = seenBodies;
+    check("every preview/save body: no html, no text, no fields, under 20 KB", bodies.length > 10 && bodies.every((x) => !("html" in x.body) && !("text" in x.body) && !("fields" in x.body) && x.bytes < 20000), String(bodies.length));
+    check("the mock never saw HTML in a job value", seenViolations.length === 0, seenViolations.join(" | "));
+    console.log("payload sizes: " + sizes.map(([n, b]) => `${n} ${b} B`).join("; "));
+  }
   check("no console/page errors in extension pages", problems.length === 0, problems.join(" | "));
   await ctx.close();
   if (mock) await mock.close();
