@@ -1,7 +1,7 @@
 // Unit tests for lib/extract.js (pure functions). Run: node --test tests/extract.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { htmlToText, cleanTitle, fromJsonLd, pickPosting, extractJob, buildBody, notesFor, workModeFromText } from "../lib/extract.js";
+import { isoDate, companyFromUrl, htmlToText, cleanTitle, fromJsonLd, pickPosting, extractJob, buildBody, notesFor, workModeFromText } from "../lib/extract.js";
 
 const NO_DOM = undefined; // node has no DOMParser: htmlToText uses its fallback; the browser path is covered by tests/e2e.cjs
 const posting = {
@@ -112,7 +112,7 @@ test("extractJob: site elements beat heuristics, then heuristics", () => {
   assert.equal(p.job.company, "Acme");
   assert.equal(p.job.method, "page");
   assert.equal(p.job.description_from, "main");
-  assert.equal(extractJob(raw({ url: "https://www.acme.com/j/1" }), NO_DOM).job.company, "acme.com");
+  assert.equal(extractJob(raw({ url: "https://www.acme.com/j/1" }), NO_DOM).job.company, "Acme");
   assert.equal(extractJob(raw({ url: "http://127.0.0.1:8000/j/1" }), NO_DOM).job.company, "");
 });
 
@@ -147,4 +147,110 @@ test("buildBody keeps a huge description under the body limit", () => {
   const e = extractJob(raw({ description: "é".repeat(100000) }), NO_DOM);
   const b = buildBody(e);
   assert.ok(new TextEncoder().encode(JSON.stringify(b)).length <= 400000);
+});
+
+test("isoDate: only dates the server accepts are returned; close forms are fixed", () => {
+  const server = /^[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[T ][0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,9})?)?(?:Z|[+-][0-9]{2}:?[0-9]{2})?)?$/;
+  const cases = {
+    "2026-10-01": "2026-10-01",
+    "2026-10-01T09:00:00+10:00": "2026-10-01T09:00:00+10:00",
+    "2026-10-01T09:00:00Z": "2026-10-01T09:00:00Z",
+    "2026-10-01T09:00:00.123456Z": "2026-10-01T09:00:00.123456Z",
+    "2026-10-01T09:00": "2026-10-01T09:00",
+    "2026-10-1": "2026-10-01",
+    "2026-1-5": "2026-01-05",
+    "2026-10-01T9:00:00": "2026-10-01T09:00:00",
+    "2026-10-01t09:00:00z": "2026-10-01T09:00:00Z",
+    "2026-10-01T09:00:00+10": "2026-10-01T09:00:00+10:00",
+    "2026-10-01T09:00:00+1000": "2026-10-01T09:00:00+1000",
+    "2026-10-01 09:00:00": "2026-10-01 09:00:00".replace(" ", "T"),
+    "2026-10-01T09:00:00,5Z": "2026-10-01T09:00:00.5Z",
+    "  2026-10-01  ": "2026-10-01",
+    "October 1, 2026": "2026-10-01",
+    "1 Oct 2026": "2026-10-01",
+    "01/10/2026": "",
+    "2026-13-01": "",
+    "2026-10-32": "",
+    "2026-10-01T25:00:00Z": "",
+    "2026-10-01Z": "",
+    "yesterday": "",
+    "Posted 3 days ago": "",
+    "Job 1": "",
+    "2026": "",
+    "": "",
+    null: "",
+    1: "",
+  };
+  for (const [input, want] of Object.entries(cases)) {
+    const got = isoDate(input === "null" ? null : input === "1" ? 1 : input);
+    assert.equal(got, input === "2026-10-01Z" ? "" : want, JSON.stringify(input));
+    if (got) assert.match(got, server, input);
+  }
+  assert.equal(isoDate("2026-10-01T09:00:00".padEnd(60, "0")), "");
+});
+
+test("JSON-LD datePosted odd forms go through isoDate; unusable ones are omitted from the body", () => {
+  assert.equal(fromJsonLd({ title: "X", datePosted: "2026-10-1" }, NO_DOM).posted_at, "2026-10-01");
+  assert.equal(fromJsonLd({ title: "X", datePosted: "2 days ago" }, NO_DOM).posted_at, "");
+  const e = extractJob(raw({ jsonld: [{ ...posting, datePosted: "01/10/2026" }] }), NO_DOM);
+  assert.ok(!("posted_at" in buildBody(e).job));
+  e.job.posted_at = "junk";
+  assert.ok(!("posted_at" in buildBody(e).job));
+});
+
+test("buildBody keeps every value inside the server's limits and lists", () => {
+  const long = "é".repeat(700) + "😀".repeat(3);
+  const e = extractJob(raw({ jsonld: [{ ...posting, title: "T".repeat(900), hiringOrganization: long, employmentType: "x".repeat(300), url: "javascript:alert(1)" }], canonical_url: "ftp://x/y" }), NO_DOM);
+  e.job.work_mode = "sometimes";
+  const b = buildBody(e, { location_text: "😀".repeat(400) });
+  const limits = { title: 500, company: 500, location_text: 500, salary_text: 500, employment_type: 100, posted_at: 40, url: 2048, description: 100000 };
+  for (const [k, n] of Object.entries(limits)) if (k in b.job) assert.ok(b.job[k].length <= n, k);
+  assert.ok(!("work_mode" in b.job));
+  assert.ok(!("url" in b.job));
+  assert.ok(!("canonical_url" in b));
+  assert.ok(!/[\ud800-\udbff]$/.test(b.job.location_text));
+  assert.ok(["selection", "structured", "site", "main", "body", ""].includes(b.job.description_from ?? ""));
+  assert.ok(["jsonld", "site", "page", ""].includes(b.job.method ?? ""));
+});
+
+test("companyFromUrl: job boards give the company from the path or subdomain", () => {
+  const c = companyFromUrl;
+  assert.equal(c("https://boards.greenhouse.io/acme-corp/jobs/123"), "Acme Corp");
+  assert.equal(c("https://job-boards.greenhouse.io/acme/jobs/1?gh_jid=1"), "Acme");
+  assert.equal(c("https://job-boards.eu.greenhouse.io/acme/jobs/1"), "Acme");
+  assert.equal(c("https://boards.greenhouse.io/embed/job_app?for=big-co&token=1"), "Big Co");
+  assert.equal(c("https://boards.greenhouse.io/"), "");
+  assert.equal(c("https://jobs.lever.co/acme-corp/abc-123"), "Acme Corp");
+  assert.equal(c("https://apply.workable.com/acme-corp/j/ABC123/"), "Acme Corp");
+  assert.equal(c("https://jobs.ashbyhq.com/acme/1b2c"), "Acme");
+  assert.equal(c("https://jobs.smartrecruiters.com/AcmeCorp/743999-engineer"), "AcmeCorp");
+  assert.equal(c("https://careers.smartrecruiters.com/acme-corp/x"), "Acme Corp");
+  assert.equal(c("https://acme-corp.wd5.myworkdayjobs.com/en-US/External/job/Sydney/Dev_R1"), "Acme Corp");
+  assert.equal(c("https://wd5.myworkdayjobs.com/x"), "");
+  assert.equal(c("https://acme.bamboohr.com/careers/12"), "Acme");
+  assert.equal(c("https://acme-corp.recruitee.com/o/dev"), "Acme Corp");
+  assert.equal(c("https://acme.teamtailor.com/jobs/1-dev"), "Acme");
+  assert.equal(c("https://acme.applytojob.com/apply/x"), "Acme");
+});
+
+test("companyFromUrl: multi-employer boards give nothing; other sites give their own name", () => {
+  const c = companyFromUrl;
+  for (const u of ["https://www.seek.com.au/job/1", "https://au.linkedin.com/jobs/view/1", "https://au.indeed.com/viewjob?jk=1", "https://www.glassdoor.com.au/job-listing/x", "https://www.reed.co.uk/jobs/1"]) assert.equal(c(u), "", u);
+  assert.equal(c("https://careers.acme.com.au/jobs/1"), "Acme");
+  assert.equal(c("https://www.acme.com/j/1"), "Acme");
+  assert.equal(c("https://jobs.acme-corp.co.uk/x"), "Acme Corp");
+  assert.equal(c("https://acme.io/careers"), "Acme");
+  assert.equal(c("https://sub.deep.example.org/x"), "Example");
+  assert.equal(c("http://127.0.0.1:8000/j/1"), "");
+  assert.equal(c("http://localhost:3000/j/1"), "");
+  assert.equal(c("http://[::1]:8000/"), "");
+  assert.equal(c("not a url"), "");
+  assert.equal(c("ftp://acme.com/x"), "");
+});
+
+test("extractJob: the address fallback is last, and a board never becomes the company", () => {
+  assert.equal(extractJob(raw({ url: "https://boards.greenhouse.io/acme-corp/jobs/1" }), NO_DOM).job.company, "Acme Corp");
+  assert.equal(extractJob(raw({ url: "https://www.seek.com.au/job/1" }), NO_DOM).job.company, "");
+  assert.equal(extractJob(raw({ url: "https://boards.greenhouse.io/acme-corp/jobs/1", meta: { og_site_name: "Real Name" } }), NO_DOM).job.company, "Real Name");
+  assert.equal(extractJob(raw({ url: "https://boards.greenhouse.io/acme-corp/jobs/1", found: { company: "Site Co" } }), NO_DOM).job.company, "Site Co");
 });

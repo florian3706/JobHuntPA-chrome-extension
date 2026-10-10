@@ -38,6 +38,23 @@ function pagesServer() {
   });
 }
 
+// Real mode with JHPA_EMAIL / JHPA_PASSWORD: a cookie session on the same server, used to read back what the extension
+// saved (GET /api/jobs, /api/jobs/{id}) and to make and revoke a key.
+async function signIn(serverUrl) {
+  const email = process.env.JHPA_EMAIL, password = process.env.JHPA_PASSWORD;
+  if (!email || !password) return null;
+  const r = await fetch(`${serverUrl}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password }) });
+  if (!r.ok) throw new Error(`sign-in failed: ${r.status}`);
+  const cookie = r.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
+  const csrf = (await r.json()).csrf;
+  const call = async (method, p, body) => {
+    const res = await fetch(`${serverUrl}${p}`, { method, headers: { cookie, "X-CSRF-Token": csrf, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const text = await res.text();
+    return { status: res.status, json: text ? JSON.parse(text) : null };
+  };
+  return { get: (p) => call("GET", p), post: (p, b) => call("POST", p, b || {}), del: (p) => call("DELETE", p) };
+}
+
 (async () => {
   const mock = REAL ? null : await createMock();
   const pages = REAL ? await pagesServer() : null;
@@ -45,9 +62,10 @@ function pagesServer() {
   const key = REAL ? process.env.JHPA_KEY : mock.key;
   const pagesUrl = REAL ? pages.url : mock.url;
   if (!key) throw new Error("JHPA_KEY is required with JHPA_SERVER");
+  const api = REAL ? await signIn(serverUrl) : null;
   const serverHost = new URL(serverUrl).hostname;
   const extDir = fs.mkdtempSync(path.join(os.tmpdir(), "jhpa-ext-"));
-  copyExtension(extDir, [`http://${serverHost}/*`, `https://${serverHost}/*`, "http://127.0.0.1/*", "http://localhost/*", "https://www.seek.com.au/*"]);
+  copyExtension(extDir, [`http://${serverHost}/*`, `https://${serverHost}/*`, "http://127.0.0.1/*", "http://localhost/*", "https://www.seek.com.au/*", "https://boards.greenhouse.io/*"]);
 
   const ctx = await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(), "jhpa-prof-")), {
     executablePath: process.env.CHROME_BIN || undefined,
@@ -61,6 +79,10 @@ function pagesServer() {
     p.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource|ERR_/.test(m.text())) problems.push(`console: ${m.text()}`); });
   };
   ctx.on("page", watch);
+  const posted = []; // what the extension POSTed to the server (real mode; the mock keeps its own log)
+  ctx.on("request", (r) => {
+    if (r.method() === "POST" && r.url().startsWith(serverUrl) && /extension\/(preview|jobs)$/.test(r.url())) posted.push({ path: r.url().slice(serverUrl.length), raw: r.postData() || "" });
+  });
   let [sw] = ctx.serviceWorkers();
   if (!sw) sw = await ctx.waitForEvent("serviceworker");
   const extId = new URL(sw.url()).host;
@@ -125,6 +147,7 @@ function pagesServer() {
   const sizes = [];
   // SEEK pages live on seek.com.au: answer that address from the test page file (no network involved)
   await ctx.route("https://www.seek.com.au/job/12345678", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: readPage("job-seek.html") }));
+  await ctx.route("https://boards.greenhouse.io/acme-corp/jobs/4242", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: readPage("job-nocompany.html") }));
   const newJobTab = async (p) => { const t = await ctx.newPage(); await t.goto(/^https:/.test(p) ? p : `${pagesUrl}/pages/${p}`); return t; };
 
   // ---- Job from a page with JSON-LD ----
@@ -161,7 +184,7 @@ function pagesServer() {
   await popup.click("#job-save");
   await popup.waitForSelector("#job-result:not(.hidden)");
   const resultText = await popup.textContent("#job-result");
-  check("saved message", /Saved — Open in JobHuntPA/.test(resultText), resultText);
+  check("saved message", (REAL ? /(Saved|Updated)/ : /Saved — Open in JobHuntPA/).test(resultText), resultText);
   if (!REAL) {
     const j = (await (await fetch(`${mock.url}/__state`)).json()).jobs[0];
     eq("edited title was sent", j.title, "Senior Analyst (edited)");
@@ -235,6 +258,18 @@ function pagesServer() {
   }
   await popup.close();
 
+  // ---- No company anywhere on the page: taken from the job board's address ----
+  const ghTab = await newJobTab("https://boards.greenhouse.io/acme-corp/jobs/4242");
+  popup = await openPopup(ghTab);
+  await ready(popup);
+  eq("no company: taken from the Greenhouse address", await popup.inputValue("#f-company"), "Acme Corp");
+  eq("no company: title", await popup.inputValue("#f-title"), "Site Reliability Engineer");
+  await popup.click("#job-save");
+  await popup.waitForSelector("#job-result:not(.hidden)");
+  check("no company: saved", /Saved|Updated/.test(await popup.textContent("#job-result")), await popup.textContent("#job-result"));
+  await popup.close();
+  await ghTab.close();
+
   // ---- JSON-LD inside @graph (with a broken script before it), HTML-encoded description, several locations ----
   const graphTab = await newJobTab("job-graph.html");
   popup = await openPopup(graphTab);
@@ -245,6 +280,11 @@ function pagesServer() {
   eq("graph: single salary value", await popup.inputValue("#f-salary"), "GBP 65,000 per year");
   eq("graph: employment types", await popup.inputValue("#f-type"), "Full time, Contract");
   eq("graph: description of an entity-encoded posting is text", await popup.inputValue("#f-desc"), "Build the platform.\n\nKeep it running.");
+  if (REAL) {
+    await popup.click("#job-save");
+    await popup.waitForSelector("#job-result:not(.hidden)");
+    check("graph: saved on the real server", /Saved|Updated/.test(await popup.textContent("#job-result")), await popup.textContent("#job-result"));
+  }
   if (!REAL) {
     const req = await lastBody();
     check("graph: body", req.body.job.method === "jsonld" && req.bytes < 3000, JSON.stringify(req.body.job));
@@ -267,6 +307,7 @@ function pagesServer() {
   check("seek: description from the page's job description", /from the page's job description/.test(await popup.textContent("#desc-label")), await popup.textContent("#desc-label"));
   await popup.click("#job-save");
   await popup.waitForSelector("#job-result:not(.hidden)");
+  if (REAL) check("seek: saved on the real server", /Saved|Updated/.test(await popup.textContent("#job-result")), await popup.textContent("#job-result"));
   if (!REAL) {
     const req = await lastBody(/jobs$/);
     check("seek: body", req.body.job.method === "site" && req.body.url === "https://www.seek.com.au/job/12345678" && req.bytes < 3000, JSON.stringify(req.body));
@@ -283,6 +324,11 @@ function pagesServer() {
   popup = await openPopup(hugeTab);
   await ready(popup, 30000);
   eq("huge: title", await popup.inputValue("#f-title"), "Backend Developer");
+  if (REAL) {
+    await popup.click("#job-save");
+    await popup.waitForSelector("#job-result:not(.hidden)");
+    check("huge: saved on the real server", /Saved|Updated/.test(await popup.textContent("#job-result")), await popup.textContent("#job-result"));
+  }
   if (!REAL) {
     const req = await lastBody();
     check("huge: payload stays small", req.bytes < 3000, `${req.bytes} bytes`);
@@ -356,6 +402,33 @@ function pagesServer() {
     await sw.evaluate((k) => chrome.storage.local.set({ key: k }), key);
   };
   await badKeyTest();
+  if (REAL && api) {
+    // a key that was revoked in JobHuntPA
+    const made = await api.post("/api/extension/keys", { label: "e2e revoked" });
+    eq("real: made a key to revoke", made.status, 201);
+    eq("real: revoked the key", (await api.del(`/api/extension/keys/${made.json.id}`)).status, 200);
+    await sw.evaluate((k) => chrome.storage.local.set({ key: k }), made.json.key);
+    popup = await openPopup(ldTab);
+    await popup.waitForSelector("#job-status.error");
+    const rv = await popup.textContent("#job-status");
+    check("real: revoked key -> reconnect message", /Reconnect in Options/.test(rv), rv);
+    await popup.close();
+    await opt.reload();
+    await opt.fill("#key", made.json.key);
+    await opt.click("#connect");
+    await opt.waitForSelector("#status.error");
+    check("real: options with a revoked key -> not accepted", /not accepted|Reconnect|check the key/i.test(await opt.textContent("#status")), await opt.textContent("#status"));
+    await sw.evaluate((k) => chrome.storage.local.set({ key: k }), key);
+    // a workspace the server doesn't know (deleted, or from another account)
+    await sw.evaluate(() => chrome.storage.local.set({ workspace: 987654, workspaces: [{ id: 987654, name: "Gone" }] }));
+    popup = await openPopup(ldTab);
+    await ready(popup);
+    const wsNow = (await storage()).workspace;
+    check("real: unknown workspace -> falls back to a real one", wsNow !== 987654 && (await storage()).workspaces.some((w) => w.id === wsNow), JSON.stringify(await storage()));
+    check("real: unknown workspace -> notice shown", /workspace you picked is gone/.test(await popup.textContent("#ws-notice")), await popup.textContent("#ws-notice"));
+    check("real: preview after the fallback finds the existing job", /Already in JobHuntPA/.test(await popup.textContent("#job-existing")));
+    await popup.close();
+  }
   if (!REAL) {
     for (const [m, re] of [["busy", /encrypting/], ["rate", /Try again in 7 seconds/]]) {
       await mode(m);
@@ -457,6 +530,38 @@ function pagesServer() {
     check("every preview/save body: no html, no text, no fields, under 20 KB", bodies.length > 10 && bodies.every((x) => !("html" in x.body) && !("text" in x.body) && !("fields" in x.body) && x.bytes < 20000), String(bodies.length));
     check("the mock never saw HTML in a job value", seenViolations.length === 0, seenViolations.join(" | "));
     console.log("payload sizes: " + sizes.map(([n, b]) => `${n} ${b} B`).join("; "));
+  }
+  if (REAL) {
+    check("real: every POST body is only url, canonical_url, job", posted.length >= 8 && posted.every((x) => Object.keys(JSON.parse(x.raw)).every((k) => ["url", "canonical_url", "job"].includes(k))), String(posted.length));
+    check("real: every POST body under 20 KB and no html/text fields", posted.every((x) => x.raw.length < 20000 && !/"(html|text|fields)":/.test(x.raw)));
+    const huge = posted.filter((x) => /job-huge/.test(x.raw));
+    check("real: heavy page payload stays small", huge.length >= 1 && huge.every((x) => x.raw.length < 3000 && !/SECRET-SESSION-TOKEN|__APP_STATE__/.test(x.raw)), huge.map((x) => x.raw.length).join(","));
+    console.log("payload sizes (real): " + posted.map((x) => `${x.path.split("/").pop()} ${x.raw.length} B`).join(", "));
+  }
+  if (REAL && api) {
+    const list = await api.get("/api/jobs?include=excluded,hidden");
+    eq("real: job list", list.status, 200);
+    const byUrl = {};
+    for (const it of [...list.json].sort((a, b) => a.id - b.id)) byUrl[it.url] = (await api.get(`/api/jobs/${it.id}`)).json;
+    const at = (name) => byUrl[Object.keys(byUrl).filter((u) => u.endsWith(name)).pop()] || {};
+    const plain = (d) => typeof d === "string" && !/<\/?[a-z][a-z0-9]*(\s[^>]*)?>/i.test(d) && !/&(amp|lt|gt|nbsp|quot);/.test(d);
+    const want = [
+      ["job-ld.html", { title: "Senior Analyst", company: "Example Corp", location_text: "Berlin, BE, DE", salary_text: "EUR 60,000–75,000 per year", work_mode: "remote", employment_type: "full_time" }, (d) => d.includes("- SQL\n- Python") && d.includes("\n\n") && d.includes("stack & work")],
+      ["job-graph.html", { title: "Platform Engineer", company: "Graphly", location_text: "Leeds, GB; Remote, GB", salary_text: "GBP 65,000 per year" }, (d) => d === "Build the platform.\n\nKeep it running."],
+      ["https://www.seek.com.au/job/12345678", { title: "Marketing Coordinator", company: "Brightside Pty Ltd", location_text: "Sydney NSW", salary_text: "$80,000 - $90,000 per year", employment_type: "full_time" }, (d) => d.includes("Plan campaigns") && d.includes("\n") && !/Similar jobs/.test(d)],
+      ["https://boards.greenhouse.io/acme-corp/jobs/4242", { title: "Site Reliability Engineer", company: "Acme Corp" }, (d) => /pagers/.test(d)],
+      ["job-plain.html", { title: "Data Engineer", company: "Acme Ltd", work_mode: "hybrid" }, (d) => /build pipelines/.test(d)],
+      ["job-huge.html", { title: "Backend Developer" }, (d) => d.length > 20 && d.length <= 100000],
+      ["job-notitle.html", { title: "Warehouse Operator", company: "Shipco" }, (d) => /warehouse/.test(d)],
+    ];
+    for (const [suffix, fields, descOk] of want) {
+      const j = at(suffix);
+      check(`real: stored ${suffix} exists`, !!j.id, JSON.stringify(Object.keys(byUrl)));
+      for (const [k, v] of Object.entries(fields)) eq(`real: stored ${suffix} ${k}`, j[k], v);
+      eq(`real: stored ${suffix} source`, j.source, "browser");
+      check(`real: stored ${suffix} description is plain text`, plain(j.description) && descOk(j.description || ""), JSON.stringify(j.description));
+    }
+    check("real: SEEK job stored under the clean SEEK address", !!byUrl["https://www.seek.com.au/job/12345678"]);
   }
   check("no console/page errors in extension pages", problems.length === 0, problems.join(" | "));
   await ctx.close();

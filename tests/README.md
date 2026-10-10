@@ -31,6 +31,11 @@ Run against a real JobHuntPA server:
 1. In JobHuntPA: Settings, Browser extension, Connect a browser extension; copy the key.
 2. `JHPA_SERVER=http://127.0.0.1:8000 JHPA_KEY=jhpa_... node tests/e2e.cjs`
 
+Add `JHPA_EMAIL` and `JHPA_PASSWORD` (a throw-away account) and the run also signs in with a cookie session to read back
+what was saved (`GET /api/jobs?include=excluded,hidden`, `GET /api/jobs/{id}`: title, company, location, salary, stored
+address, `source: "browser"`, plain-text description), and to make and revoke a key (revoked key message) and to try
+a workspace the server does not know. It also checks the POST bodies seen on the wire (only `url`, `canonical_url`, `job`; small).
+
 Real mode serves `tests/pages/*.html` from a throw-away local server, saves two test jobs
 ("Senior Analyst", "Data Engineer") and adds/tests one source (`.../pages/careers.html`) in the account's
 first workspace, so use a scratch account or delete them afterwards. Mock-only assertions (exact field values,
