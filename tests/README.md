@@ -37,7 +37,7 @@ Run against a real JobHuntPA server:
 
 Add `JHPA_EMAIL` and `JHPA_PASSWORD` (a throw-away account) and the run also signs in with a cookie session to read back
 what was saved (`GET /api/jobs?include=excluded,hidden`, `GET /api/jobs/{id}`: title, company, location, salary, stored
-address, `source: "browser"`, plain-text description), and to make and revoke a key (revoked key message) and to try
+address, `source: "browser:single:<site>"` (`browser:bulk:seek.com.au` for the results page's jobs), plain-text description), and to make and revoke a key (revoked key message) and to try
 a workspace the server does not know. It also checks the POST bodies seen on the wire (only `url`, `canonical_url`, `job`; small).
 
 Real mode serves `tests/pages/*.html` from a throw-away local server, saves the test pages' jobs

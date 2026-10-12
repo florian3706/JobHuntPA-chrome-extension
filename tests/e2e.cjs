@@ -690,10 +690,12 @@ async function signIn(serverUrl) {
       const j = at(suffix);
       check(`real: stored ${suffix} exists`, !!j.id, JSON.stringify(Object.keys(byUrl)));
       for (const [k, v] of Object.entries(fields)) eq(`real: stored ${suffix} ${k}`, j[k], v);
-      eq(`real: stored ${suffix} source`, j.source, "browser");
+      eq(`real: stored ${suffix} source says the extension, one job, and the site`, j.source, `browser:single:${j.url ? new URL(j.url).hostname.replace(/^www\./, "") : ""}`);
       check(`real: stored ${suffix} description is plain text`, plain(j.description) && descOk(j.description || ""), JSON.stringify(j.description));
     }
     check("real: SEEK job stored under the clean SEEK address", !!byUrl["https://www.seek.com.au/job/12345678"]);
+    const fromList = [1, 2, 3, 4, 5, 6].map((n) => byUrl[`https://www.seek.com.au/job/7000000${n}`] || {});
+    check("real: the results page's jobs are stored as summaries that came in bulk from SEEK", fromList.every((j) => j.source === "browser:bulk:seek.com.au" && j.detail_status === "summary"), JSON.stringify(fromList.map((j) => [j.source, j.detail_status])));
   }
   check("no console/page errors in extension pages", problems.length === 0, problems.join(" | "));
   await ctx.close();
