@@ -7,6 +7,11 @@ app. From any web page you can:
   salary, work mode, description), right in your browser, and fills in the form; you check or edit the fields
   and save, and only the finished job is sent to your JobHuntPA server. If the job is already there, the popup
   says so and lets you update it. Because the page is read in your own browser, postings behind a sign-in work too.
+- **Jobs on this page**: on a SEEK search results page (any view or page of it, such as *New to you* or sorted
+  by date) the popup lists the jobs on the page with tick boxes and adds the ticked ones in one go, each from the
+  summary on its card. Jobs SEEK marks as new to you are ticked to start with. Jobs JobHuntPA already has are left
+  as they are, so going over a page twice does no harm. You turn the pages yourself: the extension reads only
+  the page you have open, and never clicks, scrolls or opens anything on the site.
 - **Add source**: add a careers page or job board as a company source that JobHuntPA's searches crawl, with
   an optional label and a "Test" that shows how many postings were found and a few samples.
 
@@ -40,7 +45,7 @@ if the device is lost.
 | Permission | Why |
 | --- | --- |
 | `activeTab` | Read the page in the current tab, only when you open the popup. |
-| `scripting` | Run the small function that reads the job out of the page in the current tab (its address, title, structured job data, the job description's text and your text selection). |
+| `scripting` | Run the small function that reads the job out of the page in the current tab (its address, title, structured job data, the job description's text and your text selection; on a page of search results, what each job card shows). |
 | `storage` | Keep the server address, key and chosen workspace in `storage.local` (never synced). |
 | optional hosts `http://*/*`, `https://*/*` | Requested at runtime for **your server's address only**, when you press Connect. Nothing else is ever requested. |
 
@@ -51,14 +56,17 @@ There is no `<all_urls>` host permission, no content script on every page, no re
 The page is read on your own computer. What is sent to the JobHuntPA server you configured is the job the
 extension found: the page address, the job's title, company, location, salary, work mode and posting date, the
 job description as plain text, and, if you selected text on the page, that selected text instead of the
-description. The page's HTML, its scripts and data, and the rest of the page's text are never sent. Sending
+description. From a page of search results, what is sent is the page address and, for each job you ticked, its
+own address and what its card shows (title, company, location, salary, work type, classification, the date it was
+listed and the short summary); whether the site marks a job as new to you, viewed or applied stays in the popup.
+The page's HTML, its scripts and data, and the rest of the page's text are never sent. Sending
 happens only when you open the popup on a page and use it (to check whether the job is already saved, and
-when you press Save). Requests carry the extension key as a bearer token; no cookies are sent. The
+when you press Save or Add). On a page of search results nothing about the page is sent until you press Add. Requests carry the extension key as a bearer token; no cookies are sent. The
 extension talks to no other server and collects no data. The key is stored locally in `storage.local` and never logged.
 
 ## Develop and test
 
 No build step, no dependencies. The code is plain ES modules; `lib/api.js` implements the HTTP API, `lib/capture.js`
-the page capture (what is read out of the page), `lib/extract.js` the turning of that into the job that is sent, `popup/` and `options/` the UI. Unit tests: `node --test tests/extract.test.mjs`. End-to-end tests with a mock server (and how to run them
+the page capture (what is read out of the page, and the job cards of a page of search results), `lib/extract.js` the turning of that into the job or the list of jobs that is sent, `popup/` and `options/` the UI. Unit tests: `node --test tests/extract.test.mjs`. End-to-end tests with a mock server (and how to run them
 against a real server) are in `tests/README.md`. The Firefox repository has the same source except
 `manifest.json`.

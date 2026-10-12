@@ -2,6 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isoDate, companyFromUrl, htmlToText, cleanTitle, fromJsonLd, pickPosting, extractJob, buildBody, notesFor, workModeFromText } from "../lib/extract.js";
+import { relativeDate, extractListing, buildListBody, listingNote, LIST_LIMITS } from "../lib/extract.js";
 
 const NO_DOM = undefined; // node has no DOMParser: htmlToText uses its fallback; the browser path is covered by tests/e2e.cjs
 const posting = {
@@ -254,3 +255,165 @@ test("extractJob: the address fallback is last, and a board never becomes the co
   assert.equal(extractJob(raw({ url: "https://boards.greenhouse.io/acme-corp/jobs/1", meta: { og_site_name: "Real Name" } }), NO_DOM).job.company, "Real Name");
   assert.equal(extractJob(raw({ url: "https://boards.greenhouse.io/acme-corp/jobs/1", found: { company: "Site Co" } }), NO_DOM).job.company, "Site Co");
 });
+
+// ---------- a page of search results ----------
+
+const NOW = new Date(2026, 9, 12, 13, 0, 0); // 12 October 2026, 1 pm (local time, as the card's "3d ago" is)
+const seekCard = (over = {}) => ({
+  id: "70000001",
+  href: "https://www.seek.com.au/job/70000001?type=standard&ref=search-standalone&origin=cardTitle",
+  title: "Product  Manager",
+  company: "Northwind Software",
+  locations: ["North Sydney, Sydney NSW"],
+  arrangement: "(Hybrid)",
+  salary: "",
+  teaser: "Own the roadmap of a planning product.",
+  points: ["Flexible work", "Small team"],
+  classification: "(Information & Communication Technology)",
+  subclassification: "Product Management & Development",
+  listed: "4d ago•Viewed",
+  type: "Full time",
+  is_new: false,
+  featured: false,
+  ...over,
+});
+const rawList = (cards, site = "seek", url = "https://www.seek.com.au/product-manager-jobs?tags=new") => ({ url, listing: { site, cards } });
+
+test("relativeDate: minutes, hours and days ago as a local date; nothing for anything else", () => {
+  assert.equal(relativeDate("4d ago", NOW), "2026-10-08");
+  assert.equal(relativeDate("4d ago•Viewed", NOW), "2026-10-08");
+  assert.equal(relativeDate("27d ago · Expiring", NOW), "2026-09-15");
+  assert.equal(relativeDate("3h ago", NOW), "2026-10-12");
+  assert.equal(relativeDate("14h ago", NOW), "2026-10-11");
+  assert.equal(relativeDate("7m ago", NOW), "2026-10-12");
+  assert.equal(relativeDate("7m ago", new Date(2026, 9, 12, 0, 3)), "2026-10-11");
+  assert.equal(relativeDate("1D AGO", NOW), "2026-10-11");
+  for (const t of ["Featured", "", null, undefined, "30d+ ago", "30+d ago", "3 days ago", "Posted yesterday", "1.5d ago", "4dago", "ago"]) {
+    assert.equal(relativeDate(t, NOW), "", String(t));
+  }
+  assert.equal(relativeDate("4d ago", new Date(NaN)), "");
+});
+
+test("extractListing: a SEEK card becomes a job under the job's own address, with a summary", () => {
+  const { url, site, jobs } = extractListing(rawList([seekCard()]), NOW);
+  assert.equal(url, "https://www.seek.com.au/product-manager-jobs?tags=new");
+  assert.equal(site, "seek");
+  assert.equal(jobs.length, 1);
+  const j = jobs[0];
+  assert.equal(j.url, "https://www.seek.com.au/job/70000001"); // from the job number, without the tracking parameters
+  assert.equal(j.title, "Product Manager");
+  assert.equal(j.company, "Northwind Software");
+  assert.equal(j.location_text, "North Sydney, Sydney NSW");
+  assert.equal(j.work_mode, "hybrid");
+  assert.equal(j.employment_type, "Full time");
+  assert.equal(j.posted_at, "2026-10-08");
+  assert.equal(j.industry, "Product Management & Development");
+  assert.equal(j.listed, "4d ago · Viewed");
+  assert.deepEqual([j.is_new, j.viewed, j.applied], [false, true, false]);
+  assert.equal(
+    j.description,
+    "Own the roadmap of a planning product.\n\n- Flexible work\n- Small team\n\nWork type: Full time\nClassification: Product Management & Development, Information & Communication Technology",
+  );
+});
+
+test("extractListing: work arrangement, several places, badges and missing values", () => {
+  const { jobs } = extractListing(
+    rawList([
+      seekCard({ id: "1", arrangement: "(Remote)", listed: "1d ago•Applied", salary: "$125,000 – $145,000 per year" }),
+      seekCard({ id: "2", arrangement: "( On-site )", locations: ["Hamburg", "Perth WA", "Hamburg"], is_new: true, listed: "7m ago" }),
+      seekCard({ id: "3", arrangement: "", title: "Remote Product Lead", type: "Contract/Temp", points: [], teaser: "", classification: "", subclassification: "", listed: "30d+ ago" }),
+      seekCard({ id: "4", arrangement: "", company: "", locations: [], points: null, listed: "" }),
+    ]),
+    NOW,
+  );
+  assert.deepEqual(jobs.map((j) => j.work_mode), ["remote", "onsite", "remote", "unknown"]);
+  assert.deepEqual(jobs.map((j) => j.posted_at), ["2026-10-11", "2026-10-12", "", ""]);
+  assert.deepEqual(jobs.map((j) => [j.is_new, j.viewed, j.applied]), [[false, false, true], [true, false, false], [false, false, false], [false, false, false]]);
+  assert.equal(jobs[0].salary_text, "$125,000 – $145,000 per year");
+  assert.equal(jobs[1].location_text, "Hamburg; Perth WA");
+  assert.equal(jobs[2].description, "Work type: Contract/Temp");
+  assert.equal(jobs[2].industry, "");
+  assert.equal(jobs[3].company, "");
+  assert.equal(jobs[3].location_text, "");
+});
+
+test("extractListing: a job shown twice (a featured copy) is one job, the dated card giving the date", () => {
+  const featured = seekCard({ listed: "Featured", featured: true, salary: "", is_new: true });
+  const normal = seekCard({ listed: "4d ago•Viewed", salary: "$150k + super" });
+  for (const cards of [[featured, normal], [normal, featured]]) {
+    const { jobs } = extractListing(rawList(cards), NOW);
+    assert.equal(jobs.length, 1);
+    assert.equal(jobs[0].posted_at, "2026-10-08");
+    assert.equal(jobs[0].listed, "4d ago · Viewed");
+    assert.equal(jobs[0].salary_text, "$150k + super");
+    assert.deepEqual([jobs[0].is_new, jobs[0].viewed], [true, true]);
+  }
+  const only = extractListing(rawList([featured]), NOW).jobs[0];
+  assert.deepEqual([only.posted_at, only.listed], ["", "Featured"]);
+});
+
+test("extractListing: cards without a job number or a title are left out; odd input gives nothing", () => {
+  const { jobs } = extractListing(
+    rawList([seekCard({ id: "" }), seekCard({ id: "12a" }), seekCard({ id: "1".repeat(21) }), seekCard({ id: "5", title: "   " }), null, "x", 7, seekCard({ id: "6" })]),
+    NOW,
+  );
+  assert.deepEqual(jobs.map((j) => j.url), ["https://www.seek.com.au/job/6"]);
+  for (const raw of [null, {}, { url: "https://www.seek.com.au/jobs" }, { url: "https://www.seek.com.au/jobs", listing: null }, { url: "https://www.seek.com.au/jobs", listing: { site: "seek", cards: "x" } }, { url: "not a url", listing: { site: "seek", cards: [seekCard()] } }]) {
+    assert.deepEqual(extractListing(raw, NOW).jobs, []);
+  }
+});
+
+test("extractListing: another board's card keeps its own link only when it is on the page's site", () => {
+  const page = "https://jobs.example.com/search?q=pm";
+  const { jobs } = extractListing(
+    rawList(
+      [
+        seekCard({ id: "", href: "https://jobs.example.com/roles/42?ref=list#top", title: "Kept" }),
+        seekCard({ id: "9", href: "https://evil.example/roles/42", title: "Another site" }),
+        seekCard({ id: "9", href: "", title: "No link" }),
+        seekCard({ id: "9", href: "javascript:alert(1)", title: "Not a link" }),
+      ],
+      "other",
+      page,
+    ),
+    NOW,
+  );
+  assert.deepEqual(jobs.map((j) => [j.title, j.url]), [["Kept", "https://jobs.example.com/roles/42?ref=list"]]);
+});
+
+test("buildListBody: only the values the server takes, empty ones left out, at most 50 jobs", () => {
+  const listing = extractListing(rawList([seekCard(), seekCard({ id: "2", arrangement: "", salary: "", company: "", listed: "Featured", is_new: true })]), NOW);
+  const body = buildListBody(listing, listing.jobs);
+  assert.deepEqual(Object.keys(body), ["url", "jobs"]);
+  assert.equal(body.url, "https://www.seek.com.au/product-manager-jobs?tags=new");
+  assert.deepEqual(Object.keys(body.jobs[0]), ["url", "title", "company", "location_text", "employment_type", "work_mode", "posted_at", "industry", "description"]);
+  assert.deepEqual(Object.keys(body.jobs[1]), ["url", "title", "location_text", "employment_type", "industry", "description"]); // unknown work mode and no date: not sent
+  assert.ok(!JSON.stringify(body).includes("is_new") && !JSON.stringify(body).includes("listed") && !JSON.stringify(body).includes("origin=cardTitle"));
+  assert.deepEqual(buildListBody(listing, [listing.jobs[1]]).jobs.map((j) => j.url), ["https://www.seek.com.au/job/2"]); // only the picked ones
+  const many = extractListing(rawList(Array.from({ length: 80 }, (_, i) => seekCard({ id: String(1000 + i) }))), NOW);
+  assert.equal(many.jobs.length, 80);
+  assert.equal(buildListBody(many, many.jobs).jobs.length, LIST_LIMITS.jobs);
+  assert.equal(LIST_LIMITS.jobs, 50);
+});
+
+test("buildListBody: values are cut to the server's limits and stay plain", () => {
+  const long = extractListing(rawList([seekCard({ teaser: "t".repeat(9000), title: "T".repeat(700), subclassification: "s".repeat(300), points: ["p".repeat(2000)] })]), NOW);
+  const job = buildListBody(long, long.jobs).jobs[0];
+  assert.equal(job.title.length, 500);
+  assert.equal(job.industry.length, 200);
+  assert.ok(job.description.length <= LIST_LIMITS.description);
+  const odd = buildListBody({ url: "https://www.seek.com.au/jobs" }, [{ url: "https://www.seek.com.au/job/1", title: "A", work_mode: "moon", posted_at: "3d ago", description: 5, company: null }, { title: "no address" }, { url: "https://www.seek.com.au/job/2" }]);
+  assert.deepEqual(odd.jobs, [{ url: "https://www.seek.com.au/job/1", title: "A" }]);
+  assert.deepEqual(buildListBody({ url: "https://www.seek.com.au/jobs" }, null).jobs, []);
+});
+
+test("listingNote: how many jobs, and how many the board marks as new to you", () => {
+  const job = (is_new) => ({ is_new });
+  assert.equal(listingNote([job(false)]), "1 job found on this page.");
+  assert.equal(listingNote([job(false), job(false)]), "2 jobs found on this page.");
+  assert.equal(listingNote([job(true), job(false), job(true)]), "3 jobs found on this page. 2 are marked \u201cNew to you\u201d.");
+  assert.equal(listingNote([job(true), job(false)]), "2 jobs found on this page. 1 is marked \u201cNew to you\u201d.");
+  assert.equal(listingNote([job(true), job(true)]), "2 jobs found on this page. All are marked \u201cNew to you\u201d.");
+  assert.equal(listingNote([job(true)]), "1 job found on this page. It is marked \u201cNew to you\u201d.");
+});
+

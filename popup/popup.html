@@ -27,6 +27,7 @@
 
     <div role="tablist" aria-label="What to add">
       <button type="button" role="tab" id="tab-job" aria-controls="panel-job" aria-selected="true">Add job</button>
+      <button type="button" role="tab" id="tab-list" aria-controls="panel-list" aria-selected="false" tabindex="-1" class="hidden">Jobs on this page</button>
       <button type="button" role="tab" id="tab-source" aria-controls="panel-source" aria-selected="false" tabindex="-1">Add source</button>
     </div>
 
@@ -66,6 +67,25 @@
         </div>
       </form>
       <div id="job-result" class="status ok hidden" role="status" aria-live="polite"></div>
+    </section>
+
+    <section role="tabpanel" id="panel-list" aria-labelledby="tab-list" class="hidden">
+      <form id="list-form" autocomplete="off">
+        <p id="list-note" class="list-note"></p>
+        <div class="pick">
+          <button type="button" id="pick-all">Tick all</button>
+          <button type="button" id="pick-new">Tick new to you</button>
+          <button type="button" id="pick-none">Tick none</button>
+        </div>
+        <ul id="list-jobs" class="joblist"></ul>
+        <div class="actions-bar">
+          <button type="submit" id="list-save" class="primary">Add jobs</button>
+          <button type="button" id="list-reread" title="Read the page again, for example after moving to the next page of results">Read page again</button>
+        </div>
+        <p class="small muted">Each job is added from its summary on this page. Jobs JobHuntPA already has are left as they are. For a full ad, open the job and use Add job.</p>
+      </form>
+      <div id="list-status" class="status hidden" role="status" aria-live="polite"></div>
+      <div id="list-result" class="status ok hidden" role="status" aria-live="polite"></div>
     </section>
 
     <section role="tabpanel" id="panel-source" aria-labelledby="tab-source" class="hidden">

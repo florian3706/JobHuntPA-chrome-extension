@@ -1,4 +1,5 @@
-// Minimal JobHuntPA stand-in implementing the extension API contract (v3: the extension reads the page, the server gets only a finished job). Also serves ./pages for the tests.
+// Minimal JobHuntPA stand-in implementing the extension API contract (v3: the extension reads the page, the server gets only a finished job;
+// api 2: a page of search results as a list of jobs, which only adds). Also serves ./pages for the tests.
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -57,6 +58,34 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
     if (!METHODS.includes(job.method || "")) return [422, "bad method", "invalid", "method"];
     return null;
   }
+  // ---- api 2: a page of search results ({url, jobs: [...]}) ----
+  const LISTED_LIMITS = { url: 2048, title: 500, company: 500, location_text: 500, salary_text: 500, employment_type: 100, posted_at: 40, industry: 200, description: 5000 };
+  const ISO_DATE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+  /** null when the body is fine, else [status, detail, code, field]. */
+  function validateList(body, size) {
+    if (size > BODY_MAX) return [413, "Too large.", "too_large"];
+    if (!body || typeof body !== "object" || Array.isArray(body)) return [422, "Body must be an object.", "invalid"];
+    for (const k of Object.keys(body)) if (!["url", "jobs"].includes(k)) return [422, `Unknown field ${k}.`, "invalid", k];
+    if (typeof body.url !== "string" || !/^https?:\/\//.test(body.url)) return [422, "url must be an http(s) address.", "invalid", "url"];
+    if (!Array.isArray(body.jobs) || !body.jobs.length) return [422, "No jobs were sent.", "invalid", "jobs"];
+    if (body.jobs.length > 50) return [413, "At most 50 jobs can be added at once.", "too_large", "jobs"];
+    for (const job of body.jobs) {
+      if (!job || typeof job !== "object" || Array.isArray(job)) return [422, "Each job must be an object.", "invalid", "jobs"];
+      for (const [k, v] of Object.entries(job)) {
+        if (!(k in LISTED_LIMITS) && k !== "work_mode") return [422, `Unknown field ${k}.`, "invalid", k];
+        if (typeof v !== "string") return [422, `${k} must be text.`, "invalid", k];
+        if (k in LISTED_LIMITS && v.length > LISTED_LIMITS[k]) return [413, `${k} too long.`, "too_large", k];
+        if (k !== "url" && HTML_TAG.test(v)) { state.violations.push(`HTML in a listed job's ${k}: ${v.slice(0, 80)}`); return [422, `${k} must be plain text.`, "invalid", k]; }
+      }
+      if (!WORK_MODES.includes(job.work_mode || "")) return [422, "bad work_mode", "invalid", "work_mode"];
+      if (job.posted_at && !ISO_DATE.test(job.posted_at)) return [422, "bad posted_at", "invalid", "posted_at"];
+      if (!job.title || !job.title.trim()) return [422, "A job on this page has no title.", "invalid", "title"];
+      let own;
+      try { own = new URL(job.url || "", body.url); } catch { own = null; }
+      if (!job.url || !own || own.host !== new URL(body.url).host || !/^https?:$/.test(own.protocol)) return [422, "A job on this page has an address on another site.", "invalid", "url"];
+    }
+    return null;
+  }
   /** Which URL is stored: SEEK jobs by id, else job.url / canonical on the same host as url, else url. */
   function storedUrl(body) {
     const u = new URL(body.url);
@@ -99,7 +128,8 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
 
       if (req.method === "GET" && url.pathname === "/api/extension/status")
         // "wsgone": the account no longer has the workspace the extension stored (the server still answers 200).
-        return send(res, 200, { ok: true, api: 1, app_version: "1.13.0", label: "Test browser", expires_at: "2027-10-09T12:00:00Z", workspaces: state.mode === "wsgone" ? WORKSPACES.slice(1) : WORKSPACES, default_workspace: state.mode === "wsgone" ? 3 : 1 });
+        // "oldapi": a server from before it took a page of jobs
+        return send(res, 200, { ok: true, api: state.mode === "oldapi" ? 1 : 2, app_version: "1.13.0", label: "Test browser", expires_at: "2027-10-09T12:00:00Z", workspaces: state.mode === "wsgone" ? WORKSPACES.slice(1) : WORKSPACES, default_workspace: state.mode === "wsgone" ? 3 : 1 });
       if (req.method === "POST" && /^\/api\/extension\/(preview|jobs)$/.test(url.pathname)) {
         const bad = validate(body, Buffer.byteLength(raw));
         if (bad) return err(res, bad[0], bad[1], bad[2], undefined, bad[3]);
@@ -116,6 +146,23 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
         return send(res, created ? 201 : 200, { job_id: row.id, created, title: row.title, company: row.company || "", link: `/job.html?id=${row.id}&ws=${w}`,
           // "excluded_reason": only for the plain test page; null otherwise (older servers omit the field)
           excluded_reason: /job-plain/.test(body.url || "") ? "Your search excludes jobs located in Hamburg." : null });
+      }
+      if (req.method === "POST" && url.pathname === "/api/extension/jobs/batch") {
+        if (state.mode === "oldapi") return err(res, 403, "Not available with an extension key.", "token_scope");
+        const bad = validateList(body, Buffer.byteLength(raw));
+        if (bad) return err(res, bad[0], bad[1], bad[2], undefined, bad[3]);
+        const out = [];
+        let added = 0;
+        for (const job of body.jobs) {
+          const stored = storedUrl({ url: new URL(job.url, body.url).href });
+          let row = state.jobs.find((j) => j.url === stored && j.ws === w);
+          const created = !row;
+          if (!row) { row = { id: state.nextJob++, ws: w, ...job, url: stored, listed: true }; state.jobs.push(row); added++; } // an existing job is left as it is
+          out.push({ url: stored, job_id: row.id, created, title: row.title, company: row.company || "", link: `/job.html?id=${row.id}&ws=${w}`,
+            // "excluded_reason": only for jobs in Hamburg (see the plain test page)
+            excluded_reason: created && /Hamburg/.test(row.location_text || "") ? "Your search excludes jobs located in Hamburg." : null });
+        }
+        return send(res, 200, { added, existing: body.jobs.length - added, jobs: out });
       }
       if (req.method === "GET" && url.pathname === "/api/sources") return send(res, 200, state.sources.filter((s) => s.ws === w));
       if (req.method === "POST" && url.pathname === "/api/sources") {

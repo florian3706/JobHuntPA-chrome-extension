@@ -148,6 +148,7 @@ async function signIn(serverUrl) {
   // SEEK pages live on seek.com.au: answer that address from the test page file (no network involved)
   await ctx.route("https://www.seek.com.au/job/12345678", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: readPage("job-seek.html") }));
   await ctx.route("https://boards.greenhouse.io/acme-corp/jobs/4242", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: readPage("job-nocompany.html") }));
+  await ctx.route(/^https:\/\/www\.seek\.com\.au\/product-manager-jobs/, (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: readPage("results-seek.html") }));
   const newJobTab = async (p) => { const t = await ctx.newPage(); await t.goto(/^https:/.test(p) ? p : `${pagesUrl}/pages/${p}`); return t; };
 
   // ---- Job from a page with JSON-LD ----
@@ -159,6 +160,7 @@ async function signIn(serverUrl) {
   eq("preview: company", await popup.inputValue("#f-company"), REAL ? await popup.inputValue("#f-company") : "Example Corp");
   check("preview: description present", (await popup.inputValue("#f-desc")).length > 20);
   check("popup shows the page url", (await popup.textContent("#page-url")).includes("job-ld.html"));
+  check("a job page has no \"Jobs on this page\" tab", (await popup.locator("#tab-list.hidden").count()) === 1);
   await popup.screenshot({ path: path.join(OUT, "popup-job.png") });
   eq("form: location from the address parts", await popup.inputValue("#f-location"), "Berlin, BE, DE");
   eq("form: salary from baseSalary", await popup.inputValue("#f-salary"), "EUR 60,000–75,000 per year");
@@ -316,6 +318,136 @@ async function signIn(serverUrl) {
   }
   await popup.close();
   await seekTab.close();
+
+  // ---- A page of search results (SEEK-style job cards, served for https://www.seek.com.au/product-manager-jobs) ----
+  await reset();
+  const listReady = (pp) => pp.waitForSelector("#list-save", { state: "visible", timeout: 20000 });
+  const ticked = (pp) => pp.locator("#list-jobs input:checked").count();
+  const resultsUrl = "https://www.seek.com.au/product-manager-jobs?tags=new";
+  const listTab = await newJobTab(resultsUrl);
+  popup = await openPopup(listTab);
+  await listReady(popup);
+  eq("results: the tab is there and opened", await popup.getAttribute("#tab-list", "aria-selected"), "true");
+  if (!REAL) eq("results: opening the popup sends nothing about the page", (await state()).log.map((x) => x.path).join(" "), "/api/extension/status");
+  eq("results: the other panels are hidden", await popup.locator("#panel-job.hidden, #panel-source.hidden").count(), 2);
+  eq("results: each job once, cards without a title or job number left out", await popup.locator("#list-jobs li").count(), 6);
+  eq("results: note", await popup.textContent("#list-note"), "6 jobs found on this page. 3 are marked \u201cNew to you\u201d. Those are ticked.");
+  eq("results: the new-to-you jobs are ticked", await ticked(popup), 3);
+  eq("results: button says how many", await popup.textContent("#list-save"), "Add 3 jobs");
+  const firstRow = await popup.textContent("#list-jobs li:nth-child(1)");
+  check("results: a row shows title, employer, place and the card's date line", /Product Manager/.test(firstRow) && /Northwind Software \u00b7 North Sydney, Sydney NSW \u00b7 4d ago \u00b7 Viewed/.test(firstRow), firstRow);
+  const secondRow = await popup.textContent("#list-jobs li:nth-child(2)");
+  check("results: entities are text, salary shown, badge in words", /Senior Product Owner & Delivery Lead/.test(secondRow) && /\$150,000 – \$170,000 per year/.test(secondRow) && /New to you/.test(secondRow), secondRow);
+  eq("results: every tick box has its job as its label", await popup.locator("#list-jobs label input[type=checkbox]").count(), 6);
+  await popup.click("#pick-none");
+  check("results: nothing ticked, nothing to add", (await ticked(popup)) === 0 && (await popup.isDisabled("#list-save")) && (await popup.textContent("#list-save")) === "Add jobs");
+  await popup.click("#pick-new");
+  eq("results: tick new to you", await ticked(popup), 3);
+  await popup.click("#pick-all");
+  eq("results: tick all", await popup.textContent("#list-save"), "Add 6 jobs");
+  await popup.uncheck("#list-jobs li:nth-child(6) input");
+  eq("results: unticking one job", await popup.textContent("#list-save"), "Add 5 jobs");
+  await popup.screenshot({ path: path.join(OUT, "popup-list.png") });
+  await popup.click("#list-save");
+  await popup.waitForSelector("#list-result:not(.hidden)");
+  const listResult = await popup.textContent("#list-result");
+  check("results: says what was added", (REAL ? /(Added \d+ jobs?|No new jobs were added)\./ : /^Added 5 jobs\. Open JobHuntPA/).test(listResult), listResult);
+  eq("results: added rows can't be sent again", await popup.locator("#list-jobs input:disabled").count(), 5);
+  check("results: nothing left to add", (await popup.isDisabled("#list-save")) && (await popup.textContent("#list-save")) === "Add jobs");
+  check("results: the answer is in a live region", (await popup.getAttribute("#list-result", "aria-live")) === "polite");
+  if (!REAL) {
+    const outcomes = await popup.locator("#list-jobs .outcome").allTextContents();
+    check("results: each row says what became of it", outcomes.length === 5 && outcomes.filter((t) => t === "Added \u2014 open").length === 4 && outcomes.includes("Added, but your search filters exclude it \u2014 open"), JSON.stringify(outcomes));
+    eq("results: filtered-out note", await popup.textContent("#list-excluded"), "Your search filters exclude 1 of the added jobs, so it only shows in JobHuntPA's Jobs list with \u201cShow excluded\u201d ticked.");
+    const req = await lastBody(/jobs\/batch$/);
+    eq("results: body is the page address and the jobs", Object.keys(req.body).join(","), "url,jobs");
+    eq("results: page address", req.body.url, resultsUrl);
+    eq("results: only the ticked jobs are sent", req.body.jobs.map((j) => j.url).join(" "), [1, 2, 3, 4, 5].map((n) => `https://www.seek.com.au/job/7000000${n}`).join(" "));
+    const sentJob = req.body.jobs[0];
+    check("results: a job's values", sentJob.title === "Product Manager" && sentJob.company === "Northwind Software" && sentJob.location_text === "North Sydney, Sydney NSW" && sentJob.work_mode === "hybrid" && sentJob.employment_type === "Full time" && sentJob.industry === "Product Management & Development" && /^\d{4}-\d{2}-\d{2}$/.test(sentJob.posted_at), JSON.stringify(sentJob));
+    eq("results: a job's summary", sentJob.description, "Own the roadmap of a planning product.\n\n- Flexible work\n- Small team\n- Learning budget\n\nWork type: Full time\nClassification: Product Management & Development, Information & Communication Technology");
+    check("results: remote, on-site, contract, several places", req.body.jobs[1].work_mode === "remote" && req.body.jobs[4].work_mode === "onsite" && req.body.jobs[2].employment_type === "Contract/Temp" && !("work_mode" in req.body.jobs[2]) && req.body.jobs[4].location_text === "Hamburg; Perth WA", JSON.stringify(req.body.jobs.map((j) => [j.work_mode, j.employment_type, j.location_text])));
+    check("results: only known values, plain text, nothing else of the page", req.body.jobs.every((j) => Object.keys(j).every((k) => ["url", "title", "company", "location_text", "salary_text", "employment_type", "work_mode", "posted_at", "industry", "description"].includes(k)) && Object.values(j).every((v) => typeof v === "string" && !HTML_TAG.test(v))) && !/SECRET-SESSION-TOKEN|private\.person|Private Person|Career advice|SEEK_REDUX_DATA/.test(JSON.stringify(req.body)));
+    check("results: small request", req.bytes < 6000, String(req.bytes));
+    sizes.push(["page of results (5 jobs)", req.bytes]);
+    eq("results: X-Workspace sent", req.workspace, "1");
+    eq("results: no cookie", req.cookie, "");
+    const saved = (await state()).jobs;
+    check("results: stored under the SEEK addresses", saved.length === 5 && saved.every((j) => /^https:\/\/www\.seek\.com\.au\/job\/7000000[1-5]$/.test(j.url)), JSON.stringify(saved.map((j) => j.url)));
+    const [openedList] = await Promise.all([ctx.waitForEvent("page"), popup.click("#list-result a")]);
+    check("results: the link opens the configured server", openedList.url().startsWith(serverUrl) || (await openedList.waitForURL(/./).then(() => openedList.url().startsWith(serverUrl))), openedList.url());
+    await openedList.close();
+    const [openedJob] = await Promise.all([ctx.waitForEvent("page"), popup.click("#list-jobs li:nth-child(1) .outcome a")]);
+    check("results: a row's link opens that job on the server", /job\.html\?id=\d+&ws=1$/.test(openedJob.url()) || (await openedJob.waitForURL(/./).then(() => /job\.html\?id=\d+&ws=1$/.test(openedJob.url()))), openedJob.url());
+    await openedJob.close();
+  }
+  await popup.close();
+
+  // The same page again: what is there is left alone, the rest is added
+  popup = await openPopup(listTab);
+  await listReady(popup);
+  await popup.click("#pick-all");
+  await popup.click("#list-save");
+  await popup.waitForSelector("#list-result:not(.hidden)");
+  if (!REAL) {
+    eq("results again: only the missing job is added", (await popup.textContent("#list-result")).replace(/ Open JobHuntPA.*$/, ""), "Added 1 job. 5 jobs were already in JobHuntPA and were left as they are.");
+    const outcomes = await popup.locator("#list-jobs .outcome").allTextContents();
+    check("results again: rows say which were already there", outcomes.filter((t) => t === "Already in JobHuntPA \u2014 open").length === 5 && outcomes.filter((t) => t === "Added \u2014 open").length === 1, JSON.stringify(outcomes));
+    const kept = (await state()).jobs.find((j) => j.url === "https://www.seek.com.au/job/70000001");
+    check("results again: six jobs stored, none twice", (await state()).jobs.length === 6 && !!kept);
+  } else {
+    check("results again: nothing new the second time", /No new jobs were added|Added 1 job\./.test(await popup.textContent("#list-result")), await popup.textContent("#list-result"));
+  }
+  // The Add job tab still works on such a page: its "already there?" check runs when the tab is opened
+  if (!REAL) check("results: no preview was sent while the list tab was open", !(await state()).log.some((x) => /preview$/.test(x.path)));
+  await popup.click("#tab-job");
+  await ready(popup);
+  check("results: opening Add job checks the page as a job then", REAL || (await state()).log.filter((x) => /preview$/.test(x.path)).length === 1);
+  // Arrow keys reach the extra tab
+  await popup.focus("#tab-job");
+  await popup.keyboard.press("ArrowRight");
+  eq("results: arrow key moves to the list tab", await popup.getAttribute("#tab-list", "aria-selected"), "true");
+  await popup.keyboard.press("ArrowRight");
+  eq("results: and on to the source tab", await popup.getAttribute("#tab-source", "aria-selected"), "true");
+  await popup.keyboard.press("Home");
+  eq("results: Home goes back to the first tab", await popup.getAttribute("#tab-job", "aria-selected"), "true");
+  await popup.close();
+
+  if (!REAL) {
+    // Workspace switch: the other workspace has none of these jobs yet
+    popup = await openPopup(listTab);
+    await listReady(popup);
+    await popup.selectOption("#workspace", "3");
+    await popup.waitForFunction(() => document.querySelectorAll("#list-jobs .outcome").length === 0 && document.querySelector("#list-save").textContent === "Add 3 jobs");
+    await popup.click("#list-save");
+    await popup.waitForSelector("#list-result:not(.hidden)");
+    check("results: the other workspace gets its own jobs", /^Added 3 jobs\./.test(await popup.textContent("#list-result")) && (await lastBody(/jobs\/batch$/)).workspace === "3", await popup.textContent("#list-result"));
+    await popup.selectOption("#workspace", "1");
+    await popup.close();
+
+    // A server from before it took a page of jobs
+    await mode("oldapi");
+    popup = await openPopup(listTab);
+    await popup.waitForSelector("#list-status.warn");
+    check("old server: says to update JobHuntPA, and nothing can be sent", /can't take a page of jobs yet\. Update JobHuntPA/.test(await popup.textContent("#list-status")) && (await popup.isDisabled("#list-save")), await popup.textContent("#list-status"));
+    await popup.close();
+    await mode("ok");
+
+    // The server refuses the request (busy): the list stays and can be sent again
+    popup = await openPopup(listTab);
+    await listReady(popup);
+    await popup.click("#pick-all");
+    await mode("busy");
+    await popup.click("#list-save");
+    await popup.waitForSelector("#list-status.error");
+    check("results: an error keeps the list and the ticks", /encrypting/.test(await popup.textContent("#list-status")) && (await ticked(popup)) === 6 && !(await popup.isDisabled("#list-save")), await popup.textContent("#list-status"));
+    await mode("ok");
+    await popup.click("#list-save");
+    await popup.waitForSelector("#list-result:not(.hidden)");
+    check("results: sending again after the error works", /No new jobs were added\. 6 jobs were already in JobHuntPA/.test(await popup.textContent("#list-result")) && (await popup.locator("#list-status.hidden").count()) === 1, await popup.textContent("#list-result"));
+    await popup.close();
+  }
+  await listTab.close();
 
   // ---- A heavy page: megabytes of inline script (with app state) and style ----
   const hugeTab = await newJobTab("job-huge.html");

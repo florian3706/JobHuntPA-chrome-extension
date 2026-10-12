@@ -3,7 +3,7 @@ import { $, el, clear } from "../lib/dom.js";
 import { api, describeError, serverLink } from "../lib/api.js";
 import { loadConfig, saveConfig, hasServerAccess } from "../lib/config.js";
 import { activeTab, capturePage, CaptureError, isReadableUrl } from "../lib/capture.js";
-import { extractJob, buildBody, notesFor } from "../lib/extract.js";
+import { extractJob, buildBody, notesFor, extractListing, buildListBody, listingNote, LIST_LIMITS } from "../lib/extract.js";
 
 let cfg = null;
 let tab = null;
@@ -12,8 +12,14 @@ let preview = null;
 let previewSeq = 0;
 let source = null; // { id, url } once the page is a source
 let statusReady = Promise.resolve(); // the latest status call; nothing is sent to a workspace before it finished
+let listing = null; // the jobs of a page of search results, read in this browser: { url, site, jobs }
+let listRows = []; // one per job in the list: { job, box, item, done }
+let listBusy = false;
+let previewDue = false; // on a page of results, "is this job already there?" waits until the Add job tab is opened
 
-const TIMEOUT = { status: 15000, preview: 40000, save: 40000, source: 30000, test: 90000 };
+const TIMEOUT = { status: 15000, preview: 40000, save: 40000, list: 120000, source: 30000, test: 90000 };
+const LIST_API = 2; // the server's `api` number from which it takes a page of jobs
+const OLD_SERVER = "Your JobHuntPA server can't take a page of jobs yet. Update JobHuntPA, then open this again.";
 
 // ---------- small UI helpers ----------
 
@@ -78,6 +84,11 @@ async function init() {
   setupWorkspaceSelect();
   $("#job-form").addEventListener("submit", onSaveJob);
   $("#job-reread").addEventListener("click", () => startJob(true));
+  $("#list-form").addEventListener("submit", onSaveList);
+  $("#list-reread").addEventListener("click", () => startJob(true));
+  $("#pick-all").addEventListener("click", () => pickJobs(() => true));
+  $("#pick-new").addEventListener("click", () => pickJobs((job) => job.is_new));
+  $("#pick-none").addEventListener("click", () => pickJobs(() => false));
   $("#source-form").addEventListener("submit", onAddSource);
   $("#source-test").addEventListener("click", onTestSource);
   $("#s-url").addEventListener("input", () => {
@@ -91,21 +102,29 @@ async function init() {
   await startJob(true);
 }
 
+const TABS = ["tab-job", "tab-list", "tab-source"];
+const tabNodes = () => TABS.map((id) => $(`#${id}`));
+
+function selectTab(t, focus = false) {
+  for (const x of tabNodes()) {
+    const on = x === t;
+    x.setAttribute("aria-selected", String(on));
+    x.tabIndex = on ? 0 : -1;
+    show($(`#${x.getAttribute("aria-controls")}`), on);
+  }
+  if (focus) t.focus();
+  if (t.id === "tab-job" && previewDue) {
+    previewDue = false;
+    runPreview();
+  }
+}
+
 function setupTabs() {
-  const tabs = [$("#tab-job"), $("#tab-source")];
-  const panels = { "tab-job": $("#panel-job"), "tab-source": $("#panel-source") };
-  const select = (t, focus) => {
-    for (const x of tabs) {
-      const on = x === t;
-      x.setAttribute("aria-selected", String(on));
-      x.tabIndex = on ? 0 : -1;
-      show(panels[x.id], on);
-    }
-    if (focus) t.focus();
-  };
-  tabs.forEach((t, i) => {
-    t.addEventListener("click", () => select(t, false));
+  for (const t of tabNodes()) {
+    t.addEventListener("click", () => selectTab(t));
     t.addEventListener("keydown", (e) => {
+      const tabs = tabNodes().filter((x) => !x.classList.contains("hidden")); // "Jobs on this page" is not always there
+      const i = tabs.indexOf(t);
       let j = -1;
       if (e.key === "ArrowRight") j = (i + 1) % tabs.length;
       else if (e.key === "ArrowLeft") j = (i + tabs.length - 1) % tabs.length;
@@ -113,10 +132,10 @@ function setupTabs() {
       else if (e.key === "End") j = tabs.length - 1;
       if (j >= 0) {
         e.preventDefault();
-        select(tabs[j], true);
+        selectTab(tabs[j], true);
       }
     });
-  });
+  }
 }
 
 function fillWorkspaces() {
@@ -138,7 +157,8 @@ function setupWorkspaceSelect() {
     source = null;
     show($("#source-test"), false);
     show($("#source-status"), false);
-    if (extracted) runPreview();
+    if (listing) renderListing(false); // what was added belongs to the other workspace
+    if (extracted && !previewDue) runPreview();
   });
 }
 
@@ -161,10 +181,21 @@ async function startJob(recapture) {
     }
     const reuse = !recapture && extracted;
     const [captured] = await Promise.all([reuse ? null : capturePage(tab), refreshStatus()]);
-    if (!reuse) extracted = extractJob(captured); // all the reading and tidying happens here, on this computer
+    if (!reuse) {
+      extracted = extractJob(captured); // all the reading and tidying happens here, on this computer
+      listing = extractListing(captured);
+    }
     renderJob(extracted.job);
+    if (!reuse) renderListing(true);
     if (extracted.url && !$("#s-url").value) $("#s-url").value = extracted.url;
-    await runPreview();
+    if ($("#tab-list").getAttribute("aria-selected") === "true") {
+      // A page of results, not a job: nothing about the page is sent unless the Add job tab is opened.
+      previewDue = true;
+      show(status, false);
+    } else {
+      previewDue = false;
+      await runPreview();
+    }
   } catch (err) {
     if (err instanceof CaptureError) {
       setStatus(status, err.message, { kind: "warn" });
@@ -187,6 +218,7 @@ async function loadStatus() {
   const s = await api(cfg, "GET", "/api/extension/status", undefined, { timeout: TIMEOUT.status });
   const list = Array.isArray(s.workspaces) ? s.workspaces.map((w) => ({ id: w.id, name: String(w.name) })) : [];
   cfg.workspaces = list;
+  cfg.api = Number(s.api) || 1;
   let notice = "";
   if (cfg.workspace != null && !list.some((w) => w.id === cfg.workspace)) {
     // The saved workspace is gone (the server still answers 200): switch before anything is previewed or saved.
@@ -339,6 +371,143 @@ async function onSaveJob(e) {
   } finally {
     btn.disabled = false;
   }
+}
+
+// ---------- add the jobs on a page of search results ----------
+
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * Fills the "Jobs on this page" tab from the cards read from the page; the tab only shows when there are any.
+ * With `pickTab`, the tab is opened when the page shows no single job of its own (a results page).
+ */
+function renderListing(pickTab) {
+  const tabBtn = $("#tab-list");
+  const jobs = listing ? listing.jobs : [];
+  show(tabBtn, jobs.length > 0);
+  show($("#list-status"), false);
+  show($("#list-result"), false);
+  const ul = $("#list-jobs");
+  clear(ul);
+  listRows = [];
+  if (!jobs.length) {
+    if (tabBtn.getAttribute("aria-selected") === "true") selectTab($("#tab-job"));
+    return;
+  }
+  const fresh = jobs.filter((j) => j.is_new).length;
+  $("#list-note").textContent = listingNote(jobs) + (fresh && fresh < jobs.length ? " Those are ticked." : "");
+  show($("#pick-new"), fresh > 0 && fresh < jobs.length);
+  for (const job of jobs) {
+    const box = el("input", { type: "checkbox" });
+    box.checked = fresh ? job.is_new : true;
+    box.addEventListener("change", updateListButton);
+    const tags = [];
+    if (job.is_new) tags.push("New to you");
+    const meta = [job.company, job.location_text, job.salary_text, job.listed].filter(Boolean).join(" \u00b7 ");
+    const text = el("span", { class: "jobrow" }, el("span", { class: "jobrow-title", text: job.title }));
+    if (meta) text.append(el("span", { class: "jobrow-meta", text: meta }));
+    for (const t of tags) text.append(el("span", { class: "tag", text: t }));
+    const item = el("li", {}, el("label", {}, box, text));
+    ul.append(item);
+    listRows.push({ job, box, item, done: false });
+  }
+  if ((cfg.api || 1) < LIST_API) {
+    setStatus($("#list-status"), OLD_SERVER, { kind: "warn" });
+    show($("#list-status"));
+  }
+  updateListButton();
+  if (pickTab && extracted && extracted.job.method === "page") {
+    selectTab(tabBtn);
+    if (!$("#list-save").disabled) $("#list-save").focus();
+  }
+}
+
+function pickJobs(want) {
+  for (const row of listRows) if (!row.done) row.box.checked = !!want(row.job);
+  updateListButton();
+}
+
+function updateListButton() {
+  const n = listRows.filter((r) => r.box.checked && !r.done).length;
+  const btn = $("#list-save");
+  btn.textContent = n ? `Add ${plural(n, "job")}` : "Add jobs";
+  btn.disabled = !n || listBusy || (cfg.api || 1) < LIST_API;
+}
+
+/** Shows under a job what became of it, and takes it out of the next "Add". `saved` is the server's answer for it. */
+function markRow(row, saved) {
+  row.done = true;
+  row.box.checked = false;
+  row.box.disabled = true;
+  const p = el("p", { class: "outcome" });
+  if (!saved) p.append(document.createTextNode("Sent."));
+  else {
+    const filtered = typeof saved.excluded_reason === "string" && saved.excluded_reason.trim();
+    const what = saved.created === false ? "Already in JobHuntPA" : filtered ? "Added, but your search filters exclude it" : "Added";
+    p.append(document.createTextNode(`${what} \u2014 `), serverAnchor("open", saved.link || ""));
+  }
+  row.item.append(p);
+}
+
+async function onSaveList(e) {
+  e.preventDefault();
+  const status = $("#list-status");
+  const result = $("#list-result");
+  const picked = listRows.filter((r) => r.box.checked && !r.done);
+  if (!picked.length || listBusy) return;
+  listBusy = true;
+  updateListButton();
+  show(result, false);
+  setStatus(status, `Adding ${plural(picked.length, "job")}\u2026 this can take a minute.`, { busy: true });
+  show(status);
+  let added = 0;
+  let existing = 0;
+  let excluded = 0;
+  let failed = null;
+  try {
+    await statusReady; // the workspace may still be checked; a failure is reported below
+    for (let i = 0; i < picked.length; i += LIST_LIMITS.jobs) {
+      const part = picked.slice(i, i + LIST_LIMITS.jobs);
+      const r = await api(cfg, "POST", "/api/extension/jobs/batch", buildListBody(listing, part.map((row) => row.job)), { timeout: TIMEOUT.list });
+      const out = Array.isArray(r.jobs) ? r.jobs : [];
+      part.forEach((row, n) => markRow(row, out.length === part.length ? out[n] : null));
+      for (const o of out) {
+        if (o.created === false) existing++;
+        else {
+          added++;
+          if (typeof o.excluded_reason === "string" && o.excluded_reason.trim()) excluded++;
+        }
+      }
+    }
+  } catch (err) {
+    failed = err;
+  } finally {
+    listBusy = false;
+    updateListButton();
+  }
+  if (failed) {
+    if (failed.status === 403 && failed.code === "token_scope") setStatus(status, OLD_SERVER, { kind: "warn" });
+    else setError(status, failed, cfg);
+    if (!added && !existing) return;
+  } else {
+    show(status, false);
+  }
+  clear(result);
+  result.className = "status ok";
+  const lines = [added ? `Added ${plural(added, "job")}.` : "No new jobs were added."];
+  if (existing) lines.push(`${plural(existing, "job")} ${existing === 1 ? "was" : "were"} already in JobHuntPA and ${existing === 1 ? "was left as it is" : "were left as they are"}.`);
+  result.append(el("p", {}, document.createTextNode(`${lines.join(" ")} `), serverAnchor("Open JobHuntPA", "/")));
+  if (excluded) {
+    result.append(
+      el("p", {
+        class: "small",
+        id: "list-excluded",
+        text: `Your search filters exclude ${excluded === added ? (added === 1 ? "it" : "all of them") : `${excluded} of the added jobs`}, so ${excluded === 1 ? "it only shows" : "those only show"} in JobHuntPA's Jobs list with \u201cShow excluded\u201d ticked.`,
+      }),
+    );
+  }
+  show(result);
+  result.querySelector("a")?.focus();
 }
 
 // ---------- add source ----------

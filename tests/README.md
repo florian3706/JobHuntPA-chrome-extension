@@ -4,12 +4,14 @@
 through the options page, and exercises: reading the job in the browser from a JSON-LD page (also inside `@graph`),
 a SEEK-style `data-automation` page, a plain page, a 4 MB script-heavy page (the request must stay tiny and carry none of
 it), a selection and a page without a title; that the request is only `{url, canonical_url, job}` with plain-text values
-(the mock refuses anything else, as the v3 contract says); preview ("already saved?"), edit,
+(the mock refuses anything else, as the v3 contract says); a page of search results in the shape of SEEK's
+(`pages/results-seek.html`, made-up jobs: the list, the ticks, adding, adding again, an older server, an error;
+the request is only `{url, jobs}` with the ticked jobs' card values, and nothing is sent before Add); preview ("already saved?"), edit,
 save, update of an existing job, selected text, workspace switch, add source, test source, 409, restricted
 pages, 401 / 423 / 429 (rate and "busy"), stale and vanished workspaces (popup and options notices), "saved but filtered out" note, bad key, disconnect and "server down".
 
 Unit tests of the pure functions in `lib/extract.js` (JSON-LD to fields, HTML to text, titles, precedence, body
-building) need nothing installed: `node --test tests/extract.test.mjs`.
+building, job cards to a list of jobs, "3d ago" to a date) need nothing installed: `node --test tests/extract.test.mjs`.
 
 Setup (once, outside the extension folder or here; `node_modules` is git-ignored):
 
@@ -23,7 +25,9 @@ Run against the bundled mock server (implements the API contract):
 NODE_PATH=$PWD/tests/node_modules CHROME_BIN=/path/to/chrome node tests/e2e.cjs
 ```
 
-`CHROME_BIN` is a full Chromium/Chrome binary (not the headless shell); omit it to use Playwright's own.
+`CHROME_BIN` is a full Chromium or Chrome for Testing binary (not the headless shell); omit it to use Playwright's own.
+Google Chrome itself no longer loads unpacked extensions from the command line (`--load-extension`), so the run
+waits for the extension and times out with it.
 Screenshots land in `tests/out/`.
 
 Run against a real JobHuntPA server:
@@ -36,8 +40,9 @@ what was saved (`GET /api/jobs?include=excluded,hidden`, `GET /api/jobs/{id}`: t
 address, `source: "browser"`, plain-text description), and to make and revoke a key (revoked key message) and to try
 a workspace the server does not know. It also checks the POST bodies seen on the wire (only `url`, `canonical_url`, `job`; small).
 
-Real mode serves `tests/pages/*.html` from a throw-away local server, saves two test jobs
-("Senior Analyst", "Data Engineer") and adds/tests one source (`.../pages/careers.html`) in the account's
+Real mode serves `tests/pages/*.html` from a throw-away local server, saves the test pages' jobs
+("Senior Analyst", "Data Engineer", ...), the six made-up jobs of the results page (under
+`https://www.seek.com.au/job/7000000N`) and adds/tests one source (`.../pages/careers.html`) in the account's
 first workspace, so use a scratch account or delete them afterwards. Mock-only assertions (exact field values,
 request headers) are skipped. The server's crawler may refuse a local address; then the source test shows
 that error and the run still passes.
