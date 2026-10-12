@@ -8,7 +8,7 @@ it), a selection and a page without a title; that the request is only `{url, can
 (`pages/results-seek.html`, made-up jobs: the list, the ticks, adding, adding again, an older server, an error;
 the request is only `{url, jobs}` with the ticked jobs' card values, and nothing is sent before Add); preview ("already saved?"), edit,
 save, update of an existing job, selected text, workspace switch, add source, test source, 409, restricted
-pages, 401 / 423 / 429 (rate and "busy"), stale and vanished workspaces (popup and options notices), "saved but filtered out" note, bad key, disconnect and "server down".
+pages, 401 / 423 / 429 (rate and "busy"), stale and vanished workspaces (popup and options notices), "saved but filtered out" note, bad key, the popup's Settings (what it is connected to, check connection, reconnect, reset with its question), reset on the options page and "server down".
 
 Unit tests of the pure functions in `lib/extract.js` (JSON-LD to fields, HTML to text, titles, precedence, body
 building, job cards to a list of jobs, "3d ago" to a date) need nothing installed: `node --test tests/extract.test.mjs`.

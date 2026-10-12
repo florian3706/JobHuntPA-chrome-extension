@@ -9,7 +9,7 @@
 </head>
 <body>
   <h1>JobHuntPA extension</h1>
-  <p>Add the page you are looking at to your own JobHuntPA server, as a job or as a company source.</p>
+  <p>Add the page you are looking at to your own JobHuntPA server: a job, the jobs on a page of search results, or a company source.</p>
 
   <h2>How to connect</h2>
   <ol>
@@ -31,7 +31,6 @@
 
     <div class="actions-bar">
       <button type="button" id="connect" class="primary">Connect</button>
-      <button type="button" id="disconnect" class="hidden">Disconnect</button>
     </div>
     <div id="status" class="status hidden" role="status" aria-live="polite"></div>
 
@@ -41,6 +40,22 @@
       <p class="hint">You can also switch workspace in the extension's popup.</p>
     </div>
   </form>
+
+  <section id="manage" class="hidden" aria-labelledby="manage-title">
+    <h2 id="manage-title">Reconnect or reset</h2>
+    <p><strong>Reconnect:</strong> press <strong>Connect</strong> above to try the saved key again, or first paste a new key or another server address.</p>
+    <p><strong>Reset:</strong> removes the server address, the key and the chosen workspace from this browser, and withdraws the permission for your server. The key itself keeps working until you disconnect this extension in JobHuntPA (Settings, Browser extension); do that too if the device is lost.</p>
+    <div class="actions-bar">
+      <button type="button" id="reset">Reset</button>
+    </div>
+    <div id="reset-confirm" class="status warn hidden" role="group" aria-labelledby="reset-question">
+      <p id="reset-question">Remove the whole setup from this browser? To use the extension again you connect it with a new key from JobHuntPA.</p>
+      <div class="actions">
+        <button type="button" id="reset-yes">Reset now</button>
+        <button type="button" id="reset-no">Cancel</button>
+      </div>
+    </div>
+  </section>
   <script type="module" src="options.js"></script>
 </body>
 </html>

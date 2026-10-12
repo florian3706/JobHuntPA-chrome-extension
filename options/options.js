@@ -1,7 +1,7 @@
 import { ext } from "../lib/ext.js";
 import { $, el, clear } from "../lib/dom.js";
 import { api, normalizeServer, describeError, KEY_PATTERN } from "../lib/api.js";
-import { loadConfig, saveConfig, clearConfig, originPattern } from "../lib/config.js";
+import { loadConfig, saveConfig, resetSetup, originPattern } from "../lib/config.js";
 
 const statusBox = $("#status");
 let current = null;
@@ -15,7 +15,8 @@ function setStatus(message, kind = "") {
 function renderConnected(cfg) {
   current = cfg;
   const on = !!cfg;
-  $("#disconnect").classList.toggle("hidden", !on);
+  $("#manage").classList.toggle("hidden", !on);
+  $("#reset-confirm").classList.add("hidden");
   $("#ws-box").classList.toggle("hidden", !on || !cfg.workspaces.length);
   if (!on) return;
   $("#server").value = cfg.server;
@@ -153,20 +154,22 @@ $("#workspace").addEventListener("change", async (e) => {
   if (current) current.workspace = id;
 });
 
-$("#disconnect").addEventListener("click", async () => {
-  const server = current?.server;
-  await clearConfig();
-  if (server) {
-    try {
-      await ext.permissions.remove({ origins: [originPattern(server)] });
-    } catch {
-      /* already gone */
-    }
-  }
+// Reset asks once more: the key can't be read back, so connecting again needs a new one.
+$("#reset").addEventListener("click", () => {
+  $("#reset-confirm").classList.remove("hidden");
+  $("#reset-no").focus();
+});
+$("#reset-no").addEventListener("click", () => {
+  $("#reset-confirm").classList.add("hidden");
+  $("#reset").focus();
+});
+$("#reset-yes").addEventListener("click", async () => {
+  await resetSetup();
   renderConnected(null);
   $("#key").placeholder = "jhpa_…";
   $("#server").value = "";
-  setStatus("Disconnected. The key was removed from this browser and the permission for your server was withdrawn. You may also revoke the key in JobHuntPA.", "ok");
+  setStatus("Reset. The server address, the key and the workspace were removed from this browser, and the permission for your server was withdrawn. The key keeps working until you disconnect this extension in JobHuntPA (Settings, Browser extension).", "ok");
+  $("#server").focus();
 });
 
 init();

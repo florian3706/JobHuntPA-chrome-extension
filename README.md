@@ -14,6 +14,9 @@ app. From any web page you can:
   the page you have open, and never clicks, scrolls or opens anything on the site.
 - **Add source**: add a careers page or job board as a company source that JobHuntPA's searches crawl, with
   an optional label and a "Test" that shows how many postings were found and a few samples.
+- **Settings** (the button at the top of the popup): shows the server the browser is connected to, the name
+  of its key and how long the key works, with **Check connection**, **Reconnect** (opens the options page to
+  connect again, with the saved key or a new one) and **Reset** (forgets the whole setup).
 
 Works with Chrome and other Chromium browsers (Edge, Brave, ...). Manifest V3, Chrome 111 or newer. A
 Firefox version with identical code lives in `JobHuntPA-firefox-extension`.
@@ -37,8 +40,11 @@ To build a zip for the Chrome Web Store: `scripts/package.sh` writes `dist/jobhu
 
 The address can be `http://127.0.0.1:8000`, `http://raspberrypi.local:8000`, a LAN IP or an https name such
 as a Tailscale one. Without a scheme, `https://` is assumed except for localhost, IP addresses and local names.
-**Disconnect** deletes the key from the browser and withdraws the permission; revoke the key in JobHuntPA too
-if the device is lost.
+To connect again later (a new key, another address), open **Settings** in the popup and press **Reconnect**,
+or open the options page: **Connect** with the key field left empty tries the saved key again.
+**Reset** (in the popup's Settings or on the options page; it asks first) removes the server address, the key
+and the chosen workspace from the browser and withdraws the permission. The key itself keeps working until you
+disconnect the extension in JobHuntPA (Settings, Browser extension); do that too if the device is lost.
 
 ## Permissions
 

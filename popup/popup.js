@@ -1,7 +1,7 @@
 import { ext } from "../lib/ext.js";
 import { $, el, clear } from "../lib/dom.js";
 import { api, describeError, serverLink } from "../lib/api.js";
-import { loadConfig, saveConfig, hasServerAccess } from "../lib/config.js";
+import { loadConfig, saveConfig, hasServerAccess, resetSetup } from "../lib/config.js";
 import { activeTab, capturePage, CaptureError, isReadableUrl } from "../lib/capture.js";
 import { extractJob, buildBody, notesFor, extractListing, buildListBody, listingNote, LIST_LIMITS } from "../lib/extract.js";
 
@@ -81,6 +81,7 @@ async function init() {
   }
   show($("#main"));
   setupTabs();
+  setupSettings();
   setupWorkspaceSelect();
   $("#job-form").addEventListener("submit", onSaveJob);
   $("#job-reread").addEventListener("click", () => startJob(true));
@@ -162,6 +163,82 @@ function setupWorkspaceSelect() {
   });
 }
 
+// ---------- settings: what this browser is connected to, reconnect, reset ----------
+
+function setupSettings() {
+  $("#settings-toggle").addEventListener("click", () => showSettings($("#settings").classList.contains("hidden")));
+  $("#set-check").addEventListener("click", onCheckConnection);
+  $("#set-reconnect").addEventListener("click", () => {
+    ext.runtime.openOptionsPage(); // the browser's permission question needs a page that stays open
+    window.close();
+  });
+  $("#set-reset").addEventListener("click", () => {
+    show($("#set-status"), false);
+    show($("#reset-confirm"));
+    $("#reset-no").focus();
+  });
+  $("#reset-no").addEventListener("click", () => {
+    show($("#reset-confirm"), false);
+    $("#set-reset").focus();
+  });
+  $("#reset-yes").addEventListener("click", onReset);
+}
+
+function fillSettings() {
+  $("#set-server").textContent = cfg.server;
+  $("#set-label").textContent = cfg.label || "(no name)";
+  $("#set-expires").textContent = cfg.expiresAt ? new Date(cfg.expiresAt).toLocaleDateString() : "unknown";
+}
+
+/** Shows the settings in place of the tabs, or the tabs again. */
+function showSettings(on) {
+  show($("#settings"), on);
+  show($("#work"), !on);
+  show($("#work-head"), !on);
+  $("#settings-toggle").textContent = on ? "Back" : "Settings";
+  if (!on) {
+    $("#settings-toggle").focus();
+    return;
+  }
+  fillSettings();
+  show($("#set-status"), false);
+  show($("#reset-confirm"), false);
+  $("#settings-title").focus();
+}
+
+async function onCheckConnection() {
+  const box = $("#set-status");
+  const btn = $("#set-check");
+  btn.disabled = true;
+  show($("#reset-confirm"), false);
+  setStatus(box, "Checking\u2026", { busy: true });
+  show(box);
+  try {
+    if (!(await hasServerAccess(cfg.server))) {
+      setStatus(box, `This extension has no permission for ${cfg.server} any more. Press Reconnect and connect again.`, { kind: "error" });
+      return;
+    }
+    await refreshStatus();
+    fillSettings();
+    setStatus(box, "The connection works.", { kind: "ok" });
+  } catch (err) {
+    setError(box, err, cfg);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function onReset() {
+  await resetSetup();
+  cfg = null;
+  show($("#main"), false);
+  const note = $("#setup-note");
+  note.textContent = "Reset. The server address, the key and the workspace were removed from this browser.";
+  show(note);
+  show($("#setup"));
+  $("#open-options").focus();
+}
+
 // ---------- add job ----------
 
 async function startJob(recapture) {
@@ -228,7 +305,9 @@ async function loadStatus() {
   } else if (cfg.workspace == null && list.length) {
     cfg.workspace = list.some((w) => w.id === s.default_workspace) ? s.default_workspace : list[0].id;
   }
-  await saveConfig({ workspaces: list, workspace: cfg.workspace, expiresAt: s.expires_at || "" });
+  cfg.expiresAt = s.expires_at || "";
+  if (s.label) cfg.label = String(s.label);
+  await saveConfig({ workspaces: list, workspace: cfg.workspace, expiresAt: cfg.expiresAt, label: cfg.label });
   fillWorkspaces();
   const box = $("#ws-notice");
   if (notice) {

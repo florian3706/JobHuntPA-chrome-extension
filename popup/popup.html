@@ -10,21 +10,53 @@
 <body>
   <section id="setup" class="hidden">
     <h1>JobHuntPA</h1>
+    <p id="setup-note" class="status ok hidden" role="status" aria-live="polite"></p>
     <p>Connect this browser to your JobHuntPA server first.</p>
     <button type="button" id="open-options" class="primary">Open Options</button>
   </section>
 
   <main id="main" class="hidden">
     <header>
-      <h1>JobHuntPA</h1>
-      <div class="ws">
-        <label for="workspace">Workspace</label>
-        <select id="workspace"></select>
+      <div class="row">
+        <h1 class="grow">JobHuntPA</h1>
+        <button type="button" id="settings-toggle">Settings</button>
       </div>
-      <div id="ws-notice" class="status warn hidden" role="status" aria-live="polite"></div>
-      <p class="page-url" id="page-url"></p>
+      <div id="work-head">
+        <div class="ws">
+          <label for="workspace">Workspace</label>
+          <select id="workspace"></select>
+        </div>
+        <div id="ws-notice" class="status warn hidden" role="status" aria-live="polite"></div>
+        <p class="page-url" id="page-url"></p>
+      </div>
     </header>
 
+    <section id="settings" class="hidden" aria-labelledby="settings-title">
+      <h2 id="settings-title" tabindex="-1">Settings</h2>
+      <dl class="facts">
+        <dt>Server</dt>
+        <dd id="set-server"></dd>
+        <dt>Connected as</dt>
+        <dd id="set-label"></dd>
+        <dt>Key works until</dt>
+        <dd id="set-expires"></dd>
+      </dl>
+      <div class="actions-bar">
+        <button type="button" id="set-check">Check connection</button>
+        <button type="button" id="set-reconnect" title="Opens the options page, where you can connect again with a new key or another server address">Reconnect</button>
+        <button type="button" id="set-reset">Reset</button>
+      </div>
+      <div id="set-status" class="status hidden" role="status" aria-live="polite"></div>
+      <div id="reset-confirm" class="status warn hidden" role="group" aria-labelledby="reset-question">
+        <p id="reset-question">Reset removes the server address, the key and the chosen workspace from this browser. To use the extension again you connect it with a new key from JobHuntPA (Settings, Browser extension).</p>
+        <div class="actions">
+          <button type="button" id="reset-yes">Reset now</button>
+          <button type="button" id="reset-no">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="work">
     <div role="tablist" aria-label="What to add">
       <button type="button" role="tab" id="tab-job" aria-controls="panel-job" aria-selected="true">Add job</button>
       <button type="button" role="tab" id="tab-list" aria-controls="panel-list" aria-selected="false" tabindex="-1" class="hidden">Jobs on this page</button>
@@ -102,6 +134,7 @@
       </form>
       <div id="source-status" class="status hidden" role="status" aria-live="polite"></div>
     </section>
+    </div>
   </main>
   <script type="module" src="popup.js"></script>
 </body>
