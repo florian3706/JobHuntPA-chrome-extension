@@ -316,6 +316,16 @@ test("extractListing: a SEEK card becomes a job under the job's own address, wit
   );
 });
 
+test("extractListing: a job's address is on the page's own site (SEEK is at au.seek.com now)", () => {
+  for (const [page, want] of [
+    ["https://au.seek.com/product-manager-jobs?tags=new", "https://au.seek.com/job/70000001"],
+    ["https://www.seek.com.au/product-manager-jobs", "https://www.seek.com.au/job/70000001"],
+    ["https://nz.seek.com/jobs?page=2", "https://nz.seek.com/job/70000001"],
+  ]) {
+    assert.equal(extractListing(rawList([seekCard()], "seek", page), NOW).jobs[0].url, want);
+  }
+});
+
 test("extractListing: work arrangement, several places, badges and missing values", () => {
   const { jobs } = extractListing(
     rawList([

@@ -89,7 +89,7 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
   /** Which URL is stored: SEEK jobs by id, else job.url / canonical on the same host as url, else url. */
   function storedUrl(body) {
     const u = new URL(body.url);
-    if (/(^|\.)seek\.(com\.au|co\.nz)$/.test(u.hostname)) {
+    if (/(^|\.)seek\.(com|com\.au|co\.nz)$/.test(u.hostname)) { // au.seek.com is where SEEK lives now
       const id = /\/job\/(\d+)/.exec(u.pathname) || /[?&]jobId=(\d+)/.exec(u.search);
       if (id) return `https://www.seek.com.au/job/${id[1]}`;
     }

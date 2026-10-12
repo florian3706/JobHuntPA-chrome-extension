@@ -65,7 +65,7 @@ async function signIn(serverUrl) {
   const api = REAL ? await signIn(serverUrl) : null;
   const serverHost = new URL(serverUrl).hostname;
   const extDir = fs.mkdtempSync(path.join(os.tmpdir(), "jhpa-ext-"));
-  copyExtension(extDir, [`http://${serverHost}/*`, `https://${serverHost}/*`, "http://127.0.0.1/*", "http://localhost/*", "https://www.seek.com.au/*", "https://boards.greenhouse.io/*"]);
+  copyExtension(extDir, [`http://${serverHost}/*`, `https://${serverHost}/*`, "http://127.0.0.1/*", "http://localhost/*", "https://www.seek.com.au/*", "https://au.seek.com/*", "https://boards.greenhouse.io/*"]);
 
   const ctx = await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(), "jhpa-prof-")), {
     executablePath: process.env.CHROME_BIN || undefined,
@@ -145,10 +145,11 @@ async function signIn(serverUrl) {
   const lastBody = async (re = /preview$/) => { const l = (await state()).log.filter((x) => re.test(x.path)); return l[l.length - 1]; };
   const HTML_TAG = /<\/?[a-z][a-z0-9]*(\s[^>]*)?>/i;
   const sizes = [];
-  // SEEK pages live on seek.com.au: answer that address from the test page file (no network involved)
+  // SEEK lives at au.seek.com (www.seek.com.au redirects there): answer those addresses from the test page files (no network involved)
+  await ctx.route(/^https:\/\/au\.seek\.com\/job\/12345678/, (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: readPage("job-seek.html") }));
   await ctx.route("https://www.seek.com.au/job/12345678", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: readPage("job-seek.html") }));
   await ctx.route("https://boards.greenhouse.io/acme-corp/jobs/4242", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: readPage("job-nocompany.html") }));
-  await ctx.route(/^https:\/\/www\.seek\.com\.au\/product-manager-jobs/, (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: readPage("results-seek.html") }));
+  await ctx.route(/^https:\/\/au\.seek\.com\/product-manager-jobs/, (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: readPage("results-seek.html") }));
   const newJobTab = async (p) => { const t = await ctx.newPage(); await t.goto(/^https:/.test(p) ? p : `${pagesUrl}/pages/${p}`); return t; };
 
   // ---- Job from a page with JSON-LD ----
@@ -295,8 +296,8 @@ async function signIn(serverUrl) {
   await popup.close();
   await graphTab.close();
 
-  // ---- SEEK-style markup (served for https://www.seek.com.au/job/12345678) ----
-  const seekTab = await newJobTab("https://www.seek.com.au/job/12345678");
+  // ---- SEEK-style markup (served for https://au.seek.com/job/12345678, with the parameters SEEK's own links carry) ----
+  const seekTab = await newJobTab("https://au.seek.com/job/12345678?type=standard&ref=search-standalone");
   popup = await openPopup(seekTab);
   await ready(popup);
   eq("seek: title from data-automation", await popup.inputValue("#f-title"), "Marketing Coordinator");
@@ -312,18 +313,18 @@ async function signIn(serverUrl) {
   if (REAL) check("seek: saved on the real server", /Saved|Updated/.test(await popup.textContent("#job-result")), await popup.textContent("#job-result"));
   if (!REAL) {
     const req = await lastBody(/jobs$/);
-    check("seek: body", req.body.job.method === "site" && req.body.url === "https://www.seek.com.au/job/12345678" && req.bytes < 3000, JSON.stringify(req.body));
+    check("seek: body", req.body.job.method === "site" && req.body.url === "https://au.seek.com/job/12345678?type=standard&ref=search-standalone" && req.bytes < 3000, JSON.stringify(req.body));
     sizes.push(["SEEK-style page", req.bytes]);
-    check("seek: stored under the canonical SEEK address", (await state()).jobs.some((j) => j.url === "https://www.seek.com.au/job/12345678" && j.title === "Marketing Coordinator"));
+    check("seek: stored under the address JobHuntPA's searches use, whatever SEEK's own address is", (await state()).jobs.some((j) => j.url === "https://www.seek.com.au/job/12345678" && j.title === "Marketing Coordinator"));
   }
   await popup.close();
   await seekTab.close();
 
-  // ---- A page of search results (SEEK-style job cards, served for https://www.seek.com.au/product-manager-jobs) ----
+  // ---- A page of search results (SEEK-style job cards, served for https://au.seek.com/product-manager-jobs) ----
   await reset();
   const listReady = (pp) => pp.waitForSelector("#list-save", { state: "visible", timeout: 20000 });
   const ticked = (pp) => pp.locator("#list-jobs input:checked").count();
-  const resultsUrl = "https://www.seek.com.au/product-manager-jobs?tags=new";
+  const resultsUrl = "https://au.seek.com/product-manager-jobs?tags=new";
   const listTab = await newJobTab(resultsUrl);
   popup = await openPopup(listTab);
   await listReady(popup);
@@ -362,7 +363,7 @@ async function signIn(serverUrl) {
     const req = await lastBody(/jobs\/batch$/);
     eq("results: body is the page address and the jobs", Object.keys(req.body).join(","), "url,jobs");
     eq("results: page address", req.body.url, resultsUrl);
-    eq("results: only the ticked jobs are sent", req.body.jobs.map((j) => j.url).join(" "), [1, 2, 3, 4, 5].map((n) => `https://www.seek.com.au/job/7000000${n}`).join(" "));
+    eq("results: only the ticked jobs are sent, each under its address on the page's site", req.body.jobs.map((j) => j.url).join(" "), [1, 2, 3, 4, 5].map((n) => `https://au.seek.com/job/7000000${n}`).join(" "));
     const sentJob = req.body.jobs[0];
     check("results: a job's values", sentJob.title === "Product Manager" && sentJob.company === "Northwind Software" && sentJob.location_text === "North Sydney, Sydney NSW" && sentJob.work_mode === "hybrid" && sentJob.employment_type === "Full time" && sentJob.industry === "Product Management & Development" && /^\d{4}-\d{2}-\d{2}$/.test(sentJob.posted_at), JSON.stringify(sentJob));
     eq("results: a job's summary", sentJob.description, "Own the roadmap of a planning product.\n\n- Flexible work\n- Small team\n- Learning budget\n\nWork type: Full time\nClassification: Product Management & Development, Information & Communication Technology");
@@ -373,7 +374,7 @@ async function signIn(serverUrl) {
     eq("results: X-Workspace sent", req.workspace, "1");
     eq("results: no cookie", req.cookie, "");
     const saved = (await state()).jobs;
-    check("results: stored under the SEEK addresses", saved.length === 5 && saved.every((j) => /^https:\/\/www\.seek\.com\.au\/job\/7000000[1-5]$/.test(j.url)), JSON.stringify(saved.map((j) => j.url)));
+    check("results: stored under the addresses JobHuntPA's searches use", saved.length === 5 && saved.every((j) => /^https:\/\/www\.seek\.com\.au\/job\/7000000[1-5]$/.test(j.url)), JSON.stringify(saved.map((j) => j.url)));
     const [openedList] = await Promise.all([ctx.waitForEvent("page"), popup.click("#list-result a")]);
     check("results: the link opens the configured server", openedList.url().startsWith(serverUrl) || (await openedList.waitForURL(/./).then(() => openedList.url().startsWith(serverUrl))), openedList.url());
     await openedList.close();

@@ -41,8 +41,8 @@ address, `source: "browser:single:<site>"` (`browser:bulk:seek.com.au` for the r
 a workspace the server does not know. It also checks the POST bodies seen on the wire (only `url`, `canonical_url`, `job`; small).
 
 Real mode serves `tests/pages/*.html` from a throw-away local server, saves the test pages' jobs
-("Senior Analyst", "Data Engineer", ...), the six made-up jobs of the results page (under
-`https://www.seek.com.au/job/7000000N`) and adds/tests one source (`.../pages/careers.html`) in the account's
+("Senior Analyst", "Data Engineer", ...), the six made-up jobs of the results page (opened at `au.seek.com`,
+where SEEK lives; stored under `https://www.seek.com.au/job/7000000N`, the address JobHuntPA's searches use) and adds/tests one source (`.../pages/careers.html`) in the account's
 first workspace, so use a scratch account or delete them afterwards. Mock-only assertions (exact field values,
 request headers) are skipped. The server's crawler may refuse a local address; then the source test shows
 that error and the run still passes.
