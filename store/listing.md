@@ -43,14 +43,16 @@ At most 132 characters (this is also the manifest's `description`):
 > - **Add a careers page as a source** that JobHuntPA's searches read. JobHuntPA first reads the page itself and shows
 >   you the jobs it finds there before anything is saved.
 >
-> **Your data stays yours.** The extension sends what it reads only to the JobHuntPA server address you enter, and
-> only when you open its popup or press one of its buttons. Opening the popup on a web page, whether or not it is a
-> job ad (any page except a page of search results the extension recognises), sends what the extension read there to
-> your JobHuntPA server at once, before you edit anything, to check whether the job is already saved: the page's
-> address, the job's title and details, and a description that may be the visible text of the page's main part or of
-> the whole page. Nothing is saved by that; **Save job** sends the job with your edits. It never sends the page's
-> HTML, scripts, styles or anything you typed into the page's forms. There are no analytics, no ads, no tracking and
-> no third parties. The full privacy statement is at <privacy statement link>.
+> **Your data stays yours.** The extension sends what it reads only to the JobHuntPA server address you enter, and only
+> when you open its popup or options page or press one of their buttons. Opening the popup on a web page, whether or not
+> it is a job ad (any page except a page of search results the extension recognises, which so far means SEEK's, that
+> shows no job of its own; when a results page also shows one, such as a job open beside the list in SEEK's split view
+> or a job in the page's job data, that job is sent at once as on any other page), sends what the extension read there
+> to your JobHuntPA server at once, before you edit anything, to check whether the job is already saved: the page's
+> address, the job's title and details, and a description that may be the visible text of the page's main part or of the
+> whole page. Nothing is saved by that; **Save job** sends the job with your edits. It never sends the page's HTML,
+> scripts, styles or the values of the page's form fields (what you type into inputs, text areas and lists). There are
+> no analytics, no ads, no tracking and no third parties. The full privacy statement is at <privacy statement link>.
 >
 > **You need JobHuntPA** (free, open source, for Windows, macOS and Linux): install it, then in JobHuntPA open
 > Settings, Browser extension, Connect a browser extension, and paste the server address and key it shows into the
