@@ -4,14 +4,33 @@
 through the options page, and exercises: reading the job in the browser from a JSON-LD page (also inside `@graph`),
 a SEEK-style `data-automation` page, a plain page, a 4 MB script-heavy page (the request must stay tiny and carry none of
 it), a selection and a page without a title; that the request is only `{url, canonical_url, job}` with plain-text values
-(the mock refuses anything else, as the v3 contract says); a page of search results in the shape of SEEK's
+(the mock refuses anything else, as the contract says); a page of search results in the shape of SEEK's
 (`pages/results-seek.html`, made-up jobs: the list, the ticks, adding, adding again, an older server, an error;
 the request is only `{url, jobs}` with the ticked jobs' card values, and nothing is sent before Add); preview ("already saved?"), edit,
 save, update of an existing job, selected text, workspace switch, add source, test source, 409, restricted
 pages, 401 / 423 / 429 (rate and "busy"), stale and vanished workspaces (popup and options notices), "saved but filtered out" note, bad key, the popup's Settings (what it is connected to, check connection, reconnect, reset with its question), reset on the options page and "server down".
 
-Unit tests of the pure functions in `lib/extract.js` (JSON-LD to fields, HTML to text, titles, precedence, body
-building, job cards to a list of jobs, "3d ago" to a date) need nothing installed: `node --test tests/extract.test.mjs`.
+AI mappings (api 3, Part 8 of the app's `docs/design/open-source.md`): a job site the extension doesn't know
+(`pages/job-mapped.html`, served for `https://jobs.example.org/role/77`): the offer, the work-out request (only
+`{kind, url, outline}`; the outline holds none of the page's scripts, styles, comments, form values, hidden parts,
+event handlers, bad element names, SVG insides or link queries, and the mock checks it as strictly as the app does),
+the job the layout finds shown field by field, nothing saved before **Use this layout**, the PUT, the job saved with
+method `site`; the saved layout used the next time without a work-out; a changed page (`job-mapped-changed.html`,
+`/role/78`) where it no longer finds a title, offered again; the work-out's errors (AI not set up, busy, not worked
+out, AI failed, timed out), a slow answer, an answer that finds no title, an older server (nothing looked up); a
+mapping in the page (an event-handler attribute refused, a selector the browser rejects is a field not found, values
+cut to the limits) and two pages over the caps (`outline-deep.html`: 120 levels, 20,000 more elements;
+`outline-wide.html`: long attributes and texts) whose outlines are cut to fit. "Add as a source" on the open careers
+page: the jobs the app found shown before anything is saved, Add, 409, Cancel, another address added directly; a page
+the AI works out (`careers-acme.html` for `https://careers.acme.example/jobs`: the source saved with the app's
+mapping, then 200 `updated`), one where the layout finds none, AI not set up (add it anyway), busy, a refused
+address and an older server.
+
+Unit tests of the pure functions in `lib/extract.js` and `lib/mapping.js` (JSON-LD to fields, HTML to text, titles,
+precedence, body building, job cards to a list of jobs, "3d ago" to a date, the site of a page, a layout's check, the
+outline cut to the caps, a layout's values made into the job) and of the in-page outline builder and layout reader of
+`lib/capture.js` (on a small stand-in for the page's DOM, checked with the mock's copy of the app's outline check) need
+nothing installed: `node --test tests/extract.test.mjs`.
 
 Setup (once, outside the extension folder or here; `node_modules` is git-ignored):
 
@@ -44,8 +63,13 @@ Real mode serves `tests/pages/*.html` from a throw-away local server, saves the 
 ("Senior Analyst", "Data Engineer", ...), the six made-up jobs of the results page (opened at `au.seek.com`,
 where SEEK lives; stored under `https://www.seek.com.au/job/7000000N`, the address JobHuntPA's searches use) and adds/tests one source (`.../pages/careers.html`) in the account's
 first workspace, so use a scratch account or delete them afterwards. Mock-only assertions (exact field values,
-request headers) are skipped. The server's crawler may refuse a local address; then the source test shows
-that error and the run still passes.
+request headers) are skipped. A real server refuses a careers page on this computer as a source (`refused_address`),
+which the run checks; it adds `https://careers.acme.example/jobs` instead (the server can't read that made-up page,
+so it is added "anyway", without a layout). For the AI mappings the run expects the AI **not** to be set up: each
+work-out (the job site, the two pages over the caps) must answer "AI not set up", which shows the outline passed the
+server's checks; the saved-mapping endpoints are exercised with the key (PUT new and replaced, GET, the list, refusals,
+DELETE, 404 `not_found`) and the popup reads `https://jobs.example.org/role/77` with the layout PUT for
+`jobs.example.org`, saves that job and is offered a new work-out on `/role/78`.
 
 Headless Chromium cannot answer the browser's permission prompt, so the harness loads a temporary copy of the
 extension whose manifest has `host_permissions` for the server host (the shipped manifest has none).

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A very deep and very big page</title><script>
+// Builds a page over every cap of the outline: 120 levels deep, then 20,000 more elements (Part 8, 8.6).
+document.addEventListener("DOMContentLoaded", () => {
+  let at = document.querySelector("main");
+  for (let i = 0; i < 120; i++) {
+    const d = document.createElement("div");
+    d.className = `level-${i}`;
+    d.append(`level ${i}`);
+    at.append(d);
+    at = d;
+  }
+  const list = document.createElement("section");
+  list.id = "many";
+  for (let i = 0; i < 400; i++) {
+    const ul = document.createElement("ul");
+    ul.className = "group";
+    for (let j = 0; j < 50; j++) {
+      const li = document.createElement("li");
+      li.className = "item";
+      li.textContent = `Item ${i}.${j}`;
+      ul.append(li);
+    }
+    list.append(ul);
+  }
+  document.querySelector("main").append(list);
+});
+</script></head>
+<body><h1>Deep page</h1><main><p>Nested 120 levels, then 20,000 more elements.</p></main></body></html>

@@ -2,8 +2,10 @@ import { ext } from "../lib/ext.js";
 import { $, el, clear } from "../lib/dom.js";
 import { api, describeError, serverLink } from "../lib/api.js";
 import { loadConfig, saveConfig, hasServerAccess, resetSetup } from "../lib/config.js";
-import { activeTab, capturePage, CaptureError, isReadableUrl } from "../lib/capture.js";
+import { activeTab, capturePage, CaptureError, isReadableUrl, captureOutline, readMappedValues } from "../lib/capture.js";
 import { extractJob, buildBody, notesFor, extractListing, buildListBody, listingNote, LIST_LIMITS } from "../lib/extract.js";
+import { needsMapping, applyMappedValues, mappedPreview } from "../lib/extract.js";
+import { siteOfUrl, jobMappingFields, workOutRequest, FIELD_LABELS } from "../lib/mapping.js";
 
 let cfg = null;
 let tab = null;
@@ -16,10 +18,19 @@ let listing = null; // the jobs of a page of search results, read in this browse
 let listRows = []; // one per job in the list: { job, box, item, done }
 let listBusy = false;
 let previewDue = false; // on a page of results, "is this job already there?" waits until the Add job tab is opened
+let pageExtracted = null; // the job as the page's own reading found it, before any mapping was applied
+let mapChecked = false; // the site's saved mapping was looked up for this reading of the page
+let mapBusy = false;
+let mapSeq = 0; // a new reading of the page makes the answer of a work-out still running for the old one moot
+let mapState = null; // the mapping being shown for acceptance: { site, mapping, values }
+let srcState = null; // the careers page being shown for acceptance: { url, label, mapping }
 
-const TIMEOUT = { status: 15000, preview: 40000, save: 40000, list: 120000, source: 30000, test: 90000 };
+// A work-out may take up to 10 minutes on the server, which always answers before 15 (Part 8, 8.6).
+const TIMEOUT = { status: 15000, preview: 40000, save: 40000, list: 120000, source: 30000, test: 90000, mapping: 15000, workOut: 15 * 60 * 1000 };
 const LIST_API = 2; // the server's `api` number from which it takes a page of jobs
+const MAPPING_API = 3; // ... from which it works pages out with its AI and keeps the layouts of job sites
 const OLD_SERVER = "Your JobHuntPA server can't take a page of jobs yet. Update JobHuntPA, then open this again.";
+const OLD_MAPPING = "Your JobHuntPA server can't work out pages yet. Update JobHuntPA, then try again.";
 
 // ---------- small UI helpers ----------
 
@@ -94,7 +105,18 @@ async function init() {
   $("#source-test").addEventListener("click", onTestSource);
   $("#s-url").addEventListener("input", () => {
     source = null;
+    srcState = null;
     show($("#source-test"), false);
+    show($("#source-review"), false);
+  });
+  $("#map-accept").addEventListener("click", onAcceptMapping);
+  $("#map-reject").addEventListener("click", onRejectMapping);
+  $("#source-confirm").addEventListener("click", onConfirmSource);
+  $("#source-cancel").addEventListener("click", () => {
+    srcState = null;
+    show($("#source-review"), false);
+    show($("#source-status"), false);
+    $("#source-add").focus();
   });
 
   tab = await activeTab();
@@ -116,7 +138,7 @@ function selectTab(t, focus = false) {
   if (focus) t.focus();
   if (t.id === "tab-job" && previewDue) {
     previewDue = false;
-    runPreview();
+    checkJob();
   }
 }
 
@@ -158,6 +180,8 @@ function setupWorkspaceSelect() {
     source = null;
     show($("#source-test"), false);
     show($("#source-status"), false);
+    show($("#source-review"), false);
+    srcState = null;
     if (listing) renderListing(false); // what was added belongs to the other workspace
     if (extracted && !previewDue) runPreview();
   });
@@ -261,6 +285,13 @@ async function startJob(recapture) {
     if (!reuse) {
       extracted = extractJob(captured); // all the reading and tidying happens here, on this computer
       listing = extractListing(captured);
+      pageExtracted = extracted;
+      mapChecked = false;
+      mapSeq++;
+      mapBusy = false;
+      mapState = null;
+      show($("#map-box"), false);
+      show($("#map-review"), false);
     }
     renderJob(extracted.job);
     if (!reuse) renderListing(true);
@@ -271,7 +302,7 @@ async function startJob(recapture) {
       show(status, false);
     } else {
       previewDue = false;
-      await runPreview();
+      await checkJob();
     }
   } catch (err) {
     if (err instanceof CaptureError) {
@@ -316,6 +347,12 @@ async function loadStatus() {
   } else {
     show(box, false);
   }
+}
+
+/** The saved layout of the site when the page's own reading needs one, then "is this job already there?". */
+async function checkJob() {
+  await lookupMapping();
+  await runPreview();
 }
 
 /** Asks the server only whether the job is already there; the form was filled from the page by this extension. */
@@ -450,6 +487,165 @@ async function onSaveJob(e) {
   } finally {
     btn.disabled = false;
   }
+}
+
+// ---------- a job site JobHuntPA's AI worked out (api 3) ----------
+
+/** The page's site (Part 8, 8.8), or "" when it has none the app takes. */
+const pageSite = () => (pageExtracted ? siteOfUrl(pageExtracted.url) : "");
+
+/** Whether the popup may look for, or offer to work out, a layout for this page. */
+function mappable() {
+  return !!pageSite() && (cfg.api || 1) >= MAPPING_API && needsMapping(pageExtracted) && !(listing && listing.jobs.length);
+}
+
+/**
+ * When the page's own reading found no title or no description: the layout saved for the site (GET), applied to the
+ * page with the browser's selector functions. None saved, or one that no longer finds a title: the offer to work the
+ * site out. Runs once for each reading of the page.
+ */
+async function lookupMapping() {
+  if (mapChecked) return;
+  mapChecked = true;
+  if (!mappable()) return;
+  const site = pageSite();
+  const box = $("#map-box");
+  setStatus(box, `Looking for a layout saved for ${site}…`, { busy: true });
+  show(box);
+  try {
+    await statusReady;
+    const r = await api(cfg, "GET", `/api/extension/mappings/${encodeURIComponent(site)}`, undefined, { timeout: TIMEOUT.mapping });
+    const fields = jobMappingFields(r.mapping);
+    if (!fields) return offerWorkOut("stale", site); // a layout the app no longer accepts comes back as null
+    const merged = applyMappedValues(pageExtracted, await readMappedValues(tab, fields));
+    if (!merged) return offerWorkOut("stopped", site);
+    extracted = merged;
+    renderJob(extracted.job);
+    setStatus(box, `Read with the layout JobHuntPA worked out for ${site}.`, { kind: "ok", actions: [["Work it out again", onWorkOut]] });
+  } catch (err) {
+    if (err.status === 404 && err.code === "not_found") return offerWorkOut("none", site);
+    if (err instanceof CaptureError) return setStatus(box, err.message, { kind: "warn" });
+    if (err.status === 403 && err.code === "token_scope") return show(box, false);
+    if ([0, 401, 423, 429].includes(err.status)) return show(box, false); // the "already there?" check says it next
+    setError(box, err, cfg);
+  }
+}
+
+function offerWorkOut(why, site) {
+  const text = {
+    none:
+      "JobHuntPA didn't find this job's title and description on this page. It can work out where this site shows them: JobHuntPA's AI looks at an outline of this page (the names of its parts, a few of their attributes and short samples of their text; no scripts, styles or form values).",
+    stopped: `The layout saved for ${site} no longer finds the job's title on this page. JobHuntPA can work this site out again.`,
+    stale: `The layout saved for ${site} can't be used any more (JobHuntPA was updated). JobHuntPA can work this site out again.`,
+  }[why];
+  setStatus($("#map-box"), text, { kind: why === "none" ? "" : "warn", actions: [[why === "none" ? "Work out this site" : "Work it out again", onWorkOut]] });
+  show($("#map-box"));
+}
+
+/** What a failed work-out says; `retry` runs it again, `extra` are more [label, fn] actions. */
+function workOutError(box, err, retry, extra = []) {
+  if (err instanceof CaptureError) return setStatus(box, err.message, { kind: "warn", actions: extra });
+  if (err.status === 429 && err.code === "busy") {
+    return setStatus(box, "JobHuntPA is still working out the last page; try again in a minute.", { kind: "warn", actions: [["Try again", retry], ...extra] });
+  }
+  if (err.status === 403 && err.code === "token_scope") return setStatus(box, OLD_MAPPING, { kind: "warn", actions: extra });
+  if (err.status === 400 && err.code === "ai_not_set_up") {
+    return setStatus(box, err.detail || "Working out a page needs the AI, which isn't set up in JobHuntPA (Settings).", {
+      kind: "error",
+      actions: [["Open JobHuntPA", () => openServerLink("/")], ...extra],
+    });
+  }
+  const d = describeError(err, cfg);
+  const again = err.status === 0 || err.status === 502 || err.status === 504 || (err.status === 422 && err.code === "not_worked_out");
+  setStatus(box, d.message, { kind: "error", optionsLink: d.optionsLink, actions: [...(again ? [["Try again", retry]] : []), ...extra] });
+}
+
+/** Sends the page's outline to JobHuntPA, whose AI works out the site's layout; shows the job it finds. */
+async function onWorkOut() {
+  if (mapBusy || !pageExtracted) return;
+  const seq = mapSeq;
+  const site = pageSite();
+  const box = $("#map-box");
+  mapBusy = true;
+  mapState = null;
+  show($("#map-review"), false);
+  setStatus(box, "Working out this site… This may take a few minutes (JobHuntPA's tasks tray shows it too). Keep this window open: closing it loses the answer.", { busy: true });
+  show(box);
+  try {
+    await statusReady;
+    if ((cfg.api || 1) < MAPPING_API) return setStatus(box, OLD_MAPPING, { kind: "warn" });
+    const { outline } = await captureOutline(tab); // built in the page; no HTML of it leaves the browser
+    const body = workOutRequest("job", pageExtracted.url, outline);
+    if (!body) throw new CaptureError("This page is too big to be worked out.");
+    const r = await api(cfg, "POST", "/api/extension/work-out", body, { timeout: TIMEOUT.workOut });
+    if (seq !== mapSeq) return; // the page was read again meanwhile
+    const fields = jobMappingFields(r.mapping);
+    if (!fields) {
+      return setStatus(box, "JobHuntPA's answer had no page layout this extension can use. Try again, or type the job's details in.", { kind: "error", actions: [["Try again", onWorkOut]] });
+    }
+    showReview(typeof r.site === "string" && r.site ? r.site : site, r.mapping, fields, await readMappedValues(tab, fields));
+  } catch (err) {
+    if (seq === mapSeq) workOutError(box, err, onWorkOut);
+  } finally {
+    if (seq === mapSeq) mapBusy = false;
+  }
+}
+
+/** Shows the job the worked-out layout finds on this page, field by field, before the person accepts it. */
+function showReview(site, mapping, fields, values) {
+  const dl = $("#map-fields");
+  clear(dl);
+  for (const { field, value } of mappedPreview(fields, values)) {
+    dl.append(el("dt", { text: FIELD_LABELS[field] || field }));
+    const text = field === "description" && value.length > 600 ? `${value.slice(0, 600)}…` : value;
+    dl.append(el("dd", { class: value ? "" : "none", text: value ? text : "not found on this page" }));
+  }
+  const usable = !!applyMappedValues(pageExtracted, values);
+  mapState = usable ? { site, mapping, values } : null;
+  $("#map-review-note").textContent = usable
+    ? `JobHuntPA's AI worked out where ${site} shows each part of a job. On this page it finds:`
+    : `JobHuntPA's AI answered with a layout for ${site}, but it finds no job title on this page, so it can't be used.`;
+  show($("#map-accept"), usable);
+  $("#map-reject").textContent = usable ? "Don't use it" : "Close";
+  show($("#map-box"), false);
+  show($("#map-review"));
+  $("#map-review-title").focus();
+}
+
+/** Saves the layout for the site (PUT) and fills the form with the job it found. */
+async function onAcceptMapping() {
+  if (!mapState) return;
+  const { site, mapping, values } = mapState;
+  const btn = $("#map-accept");
+  const box = $("#map-box");
+  btn.disabled = true;
+  setStatus(box, `Saving the layout for ${site}…`, { busy: true });
+  show(box);
+  try {
+    const r = await api(cfg, "PUT", `/api/extension/mappings/${encodeURIComponent(site)}`, { mapping }, { timeout: TIMEOUT.save });
+    mapState = null;
+    show($("#map-review"), false);
+    const merged = applyMappedValues(pageExtracted, values);
+    if (merged) {
+      extracted = merged;
+      renderJob(extracted.job);
+      renderExisting(preview ? preview.existing : null);
+    }
+    setStatus(box, `Saved. JobHuntPA uses this layout for ${typeof r.site === "string" && r.site ? r.site : site} from now on. The form shows the job it found: check it, then save the job.`, { kind: "ok" });
+  } catch (err) {
+    if (err.status === 403 && err.code === "token_scope") setStatus(box, OLD_MAPPING, { kind: "warn" });
+    else setError(box, err, cfg, [["Try again", onAcceptMapping]]);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function onRejectMapping() {
+  mapState = null;
+  show($("#map-review"), false);
+  setStatus($("#map-box"), "Not used: nothing was saved. The form has what the extension read from the page itself.", { actions: [["Work out this site", onWorkOut]] });
+  show($("#map-box"));
+  $("#f-title").focus();
 }
 
 // ---------- add the jobs on a page of search results ----------
@@ -595,11 +791,18 @@ function describeSource(url, label) {
   return label ? `${label} (${url})` : url;
 }
 
+/** Whether the source to add is the page the person has open, so JobHuntPA can show the jobs it finds there first. */
+function checkable(url) {
+  return (cfg.api || 1) >= MAPPING_API && !!tab && tab.url === url && isReadableUrl(url) && !!siteOfUrl(url);
+}
+
 async function onAddSource(e) {
   e.preventDefault();
   const status = $("#source-status");
   const url = $("#s-url").value.trim();
   const label = $("#s-label").value.trim();
+  srcState = null;
+  show($("#source-review"), false);
   if (!/^https?:\/\//i.test(url)) {
     setStatus(status, "Enter a web address starting with http:// or https://.", { kind: "warn" });
     show(status);
@@ -616,10 +819,101 @@ async function onAddSource(e) {
       setStatus(status, "No permission for your JobHuntPA server yet. Grant it in Options.", { kind: "error", optionsLink: true });
       return;
     }
-    const body = label ? { url, label } : { url };
+    if (checkable(url)) await checkSource(url, label);
+    else await addSource(url, label, null);
+  } catch (err) {
+    setError(status, err, cfg);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/**
+ * "Add as a source" for the open page (api 3): JobHuntPA reads the page itself the usual ways and, when they find no
+ * jobs, its AI works out where the page lists them from the page's outline; the jobs the app found are shown before
+ * anything is saved.
+ */
+async function checkSource(url, label) {
+  const status = $("#source-status");
+  srcState = null;
+  show($("#source-review"), false);
+  show($("#source-test"), false);
+  setStatus(status, "Checking which jobs JobHuntPA finds on this page… It reads the page itself; when it finds none, its AI works out where the page lists them. This may take a few minutes (JobHuntPA's tasks tray shows it too).", { busy: true });
+  show(status);
+  const anyway = ["Add it anyway", () => addSource(url, label, null)];
+  try {
+    const { outline } = await captureOutline(tab);
+    const body = workOutRequest("careers", url, outline);
+    if (!body) throw new CaptureError("This page is too big to be worked out.");
+    const r = await api(cfg, "POST", "/api/extension/work-out", body, { timeout: TIMEOUT.workOut });
+    showSourceReview(r, url, label);
+  } catch (err) {
+    if (err.status === 422 && err.code === "refused_address") {
+      setStatus(status, err.detail || "This address can't be a source: it is on your local network or this computer.", { kind: "error" });
+    } else {
+      workOutError(status, err, () => checkSource(url, label), [anyway]);
+    }
+  }
+}
+
+/** "no job postings found" -> "No job postings found." */
+const sentence = (t) => (t ? t.charAt(0).toUpperCase() + t.slice(1).replace(/\s+$/, "") + (/[.!?]$/.test(t.trim()) ? "" : ".") : "");
+
+/** Shows the jobs the app found on the careers page (the work-out's dry run), with Add and Cancel. */
+function showSourceReview(r, url, label) {
+  const test = r && r.test && typeof r.test === "object" ? r.test : {};
+  const n = Number(test.count) || 0;
+  const found = test.ok === true && n > 0;
+  const mapping = r && r.worked_out === true && r.mapping && typeof r.mapping === "object" && r.mapping.kind === "careers" ? r.mapping : null;
+  const pageUrl = r && typeof r.url === "string" && /^https?:\/\//i.test(r.url) ? r.url : url;
+  srcState = { url: pageUrl, label, mapping: found ? mapping : null };
+  show($("#source-status"), false);
+  const how = test.method ? ` (read via ${str(test.method)})` : "";
+  $("#source-found").textContent = found
+    ? `JobHuntPA found ${plural(n, "job")} on this page${mapping ? " with the layout its AI worked out for it" : ""}${how}. Check them, then add the page.`
+    : `${sentence(str(test.error)) || "JobHuntPA found no jobs on this page."}${mapping ? " The layout its AI worked out found none either." : ""} You can still add the page; JobHuntPA's searches will read it again.`;
+  const ul = $("#source-sample");
+  clear(ul);
+  for (const s of Array.isArray(test.sample) ? test.sample.slice(0, 8) : []) {
+    if (s && typeof s === "object") ul.append(el("li", { text: [str(s.title), str(s.location)].filter(Boolean).join(" — ") }));
+  }
+  const notes = $("#source-notes");
+  clear(notes);
+  for (const x of Array.isArray(test.notes) ? test.notes : []) notes.append(el("li", { text: str(x) }));
+  $("#source-confirm").textContent = found ? "Add as a source" : "Add it anyway";
+  show($("#source-review"));
+  $("#source-review-title").focus();
+}
+
+async function onConfirmSource() {
+  if (!srcState) return;
+  const { url, label, mapping } = srcState;
+  srcState = null;
+  await addSource(url, label, mapping);
+}
+
+/** POST /api/sources, with the careers mapping the app worked out when there is one. */
+async function addSource(url, label, mapping) {
+  const status = $("#source-status");
+  show($("#source-review"), false);
+  setStatus(status, "Adding…", { busy: true });
+  show(status);
+  const btns = [$("#source-add"), $("#source-confirm")];
+  for (const b of btns) b.disabled = true;
+  try {
+    const body = { url };
+    if (label) body.label = label;
+    if (mapping) body.mapping = mapping;
     const s = await api(cfg, "POST", "/api/sources", body, { timeout: TIMEOUT.source });
     source = { id: s.id, url };
-    setStatus(status, `Added as a source: ${describeSource(s.url || url, s.label || label)}. The next searches will crawl it.`, { kind: "ok" });
+    const what = describeSource(str(s.url) || url, str(s.label) || label);
+    setStatus(
+      status,
+      s.updated === true
+        ? `This page was already one of your sources (${what}); it now has the layout JobHuntPA worked out for it.`
+        : `Added as a source: ${what}. The next searches will crawl it${mapping ? " with the layout JobHuntPA worked out" : ""}.`,
+      { kind: "ok" },
+    );
     show($("#source-test"));
   } catch (err) {
     if (err.status === 409) {
@@ -629,7 +923,7 @@ async function onAddSource(e) {
       setError(status, err, cfg);
     }
   } finally {
-    btn.disabled = false;
+    for (const b of btns) b.disabled = false;
   }
 }
 

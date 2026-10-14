@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A page with long attributes and texts</title><script>
+// Builds a page whose elements each carry every attribute an outline keeps, at their longest, and long texts with
+// characters that take several bytes: the 200,000-byte cap comes long before the element cap (Part 8, 8.6).
+document.addEventListener("DOMContentLoaded", () => {
+  const main = document.getElementById("main");
+  const long = (c) => c.repeat(199);
+  const names = ["id", "class", "role", "itemprop", "itemtype", "aria-label", "datetime", "title", "data-testid", "data-test", "data-qa", "data-automation", "data-cy"];
+  for (let i = 0; i < 1500; i++) {
+    const p = document.createElement("p");
+    for (const n of names) p.setAttribute(n, long(n === "class" ? "é" : "ä"));
+    p.setAttribute("itemscope", "");
+    p.setAttribute("href", "/x/" + "ü".repeat(300) + "?q=SECRET-QUERY");
+    p.append("Zeile mit Umlauten äöü und einem Emoji 😀 ".repeat(5));
+    main.append(p);
+  }
+});
+</script></head>
+<body><h1>Wide page</h1><main id="main"></main></body></html>

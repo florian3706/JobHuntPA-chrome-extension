@@ -427,3 +427,301 @@ test("listingNote: how many jobs, and how many the board marks as new to you", (
   assert.equal(listingNote([job(true)]), "1 job found on this page. It is marked \u201cNew to you\u201d.");
 });
 
+
+// ---------- AI mappings (api 3): the outline, the site, a mapping applied ----------
+
+import { createRequire } from "node:module";
+import { siteOf, siteOfUrl, jobMappingFields, workOutRequest, truncateOutline, outlineStats, jsonBytes, OUTLINE_LIMITS } from "../lib/mapping.js";
+import { readOutline, readMapped, OUTLINE_ARGS as PAGE_ARGS, LIMITS } from "../lib/capture.js";
+const OUTLINE_ARGS = { ...PAGE_ARGS, asJson: false };
+import { needsMapping, applyMappedValues, mappedWorkMode, mappedPreview } from "../lib/extract.js";
+const { checkOutline, checkMapping } = createRequire(import.meta.url)("./mock-server.cjs");
+
+// A small stand-in for the page's DOM: what readOutline and readMapped use of it, nothing more.
+class FakeText {
+  constructor(v) {
+    this.nodeType = 3;
+    this.nodeValue = v;
+  }
+}
+class FakeEl {
+  constructor(tag, attrs = {}, kids = []) {
+    this.nodeType = 1;
+    this.localName = tag;
+    this._a = { ...attrs };
+    this.display = this._a.__display || "block";
+    this.isContentEditable = this._a.contenteditable === "true";
+    delete this._a.__display;
+    this.childNodes = kids.map((k) => (typeof k === "string" ? new FakeText(k) : k));
+    this.children = this.childNodes.filter((k) => k.nodeType === 1);
+    for (const c of this.children) if (this.isContentEditable) c.isContentEditable = true;
+  }
+  hasAttribute(n) {
+    return n in this._a;
+  }
+  getAttribute(n) {
+    return n in this._a ? this._a[n] : null;
+  }
+  get textContent() {
+    return this.childNodes.map((c) => (c.nodeType === 3 ? c.nodeValue : c.textContent)).join("");
+  }
+  get innerText() {
+    return this.childNodes.map((c) => (c.nodeType === 3 ? c.nodeValue : c.localName === "p" ? `\n${c.innerText}\n` : c.innerText)).join("");
+  }
+}
+const h = (tag, attrs, ...kids) => new FakeEl(tag, attrs || {}, kids);
+function withPage(body, title, fn, querySelector) {
+  const saved = [globalThis.document, globalThis.getComputedStyle];
+  globalThis.document = { body, title, querySelector };
+  globalThis.getComputedStyle = (el) => ({ display: el.display });
+  try {
+    return fn();
+  } finally {
+    [globalThis.document, globalThis.getComputedStyle] = saved;
+  }
+}
+const allNodes = (root) => {
+  const out = [];
+  const walk = (n) => {
+    out.push(n);
+    for (const c of n.children || []) walk(c);
+  };
+  walk(root);
+  return out;
+};
+
+function trapPage() {
+  return h("body", { class: "page", "data-session": "SECRET-DATA-ATTRIBUTE", onload: "SECRET-HANDLER" },
+    h("script", {}, "SECRET-SCRIPT"),
+    h("style", {}, "SECRET-STYLE"),
+    h("nav", { "aria-label": "Main" }, h("ul", {}, ...["a", "b", "c", "d", "e", "f", "g"].map((x) => h("li", {}, h("a", { href: `/${x}?session=SECRET-QUERY#frag` }, `nav ${x}`))))),
+    h("main", { class: "jt-main" },
+      h("div", { class: "crumbs" }, h("span", { class: "ico" }), h("span", { class: "ico" })),
+      h("h1", { class: "jt-title", onclick: "SECRET-HANDLER", style: "color:red" }, "  Customer\n  Success   Lead "),
+      h("time", { class: "posted", datetime: "2026-10-01" }),
+      h("div", { id: "jt-body" }, h("p", {}, "Look after our customers."), h("p", {}, "Second paragraph.")),
+      h("input", { value: "secret-input-value", id: "n" }),
+      h("textarea", { id: "t" }, "secret textarea text"),
+      h("select", { id: "s" }, h("option", {}, "secret option")),
+      h("div", { contenteditable: "true", class: "editor" }, "SECRET-TYPED", h("p", {}, "SECRET-TYPED-TOO")),
+      h("div", { __display: "none" }, "HIDDEN-DISPLAY-NONE"),
+      h("div", { hidden: "" }, "HIDDEN-ATTRIBUTE"),
+      h("div", { "aria-hidden": "true" }, "HIDDEN-ARIA"),
+      h("noscript", {}, "SECRET-NOSCRIPT"),
+      h("template", {}, "SECRET-TEMPLATE"),
+      h("iframe", { src: "/x" }),
+      h("svg", { "aria-label": "Logo" }, h("linearGradient", {}, "SECRET-SVG")),
+      h("my_widget", {}, "SECRET-BAD-TAG", h("p", {}, "inside")),
+      h("o:p", {}, "SECRET-WORD-TAG"),
+      h("p", { id: "x".repeat(201), class: Array.from({ length: 60 }, (_, i) => `c${i}`).join(" "), "data-qa": "long-text" }, "word ".repeat(40)),
+      h("a", { href: "javascript:alert('SECRET-JS')" }, "a link that runs code"),
+    ),
+  );
+}
+
+test("readOutline: names, kept attributes and own text only; nothing hidden, no script, style, frame or form value", () => {
+  const r = withPage(trapPage(), "Customer Success Lead | Northwind", () => readOutline(OUTLINE_ARGS));
+  const json = JSON.stringify(r.outline);
+  assert.equal(checkOutline(r.outline).bad, null, JSON.stringify(checkOutline(r.outline).bad));
+  assert.equal(r.outline.title, "Customer Success Lead | Northwind");
+  assert.ok(!/SECRET|secret|HIDDEN/.test(json), json);
+  const nodes = allNodes(r.outline.root);
+  assert.equal(r.elements, nodes.length);
+  const tags = new Set(nodes.map((n) => n.tag));
+  for (const t of ["script", "style", "noscript", "template", "iframe", "my_widget", "o:p", "linearGradient", "option"]) assert.ok(!tags.has(t), t);
+  for (const n of nodes) for (const k of Object.keys(n.attrs || {})) assert.ok(OUTLINE_ARGS.attributes.includes(k), k);
+  const h1 = nodes.find((n) => n.tag === "h1");
+  assert.deepEqual(h1, { tag: "h1", attrs: { class: "jt-title" }, text: "Customer Success Lead" });
+  assert.deepEqual(nodes.find((n) => n.tag === "time"), { tag: "time", attrs: { class: "posted", datetime: "2026-10-01" } });
+  assert.deepEqual(nodes.find((n) => n.tag === "input"), { tag: "input", attrs: { id: "n" } });
+  assert.deepEqual(nodes.find((n) => n.tag === "textarea"), { tag: "textarea", attrs: { id: "t" } });
+  assert.deepEqual(nodes.find((n) => n.tag === "select"), { tag: "select", attrs: { id: "s" } }, "a list's options are left out");
+  assert.deepEqual(nodes.find((n) => n.tag === "svg"), { tag: "svg", attrs: { "aria-label": "Logo" } }, "an svg goes without its insides");
+  const editor = nodes.find((n) => n.attrs && n.attrs.class === "editor");
+  assert.ok(!editor, "an editable area with no telling attribute holds no text, so it is left out");
+  assert.ok(!nodes.some((n) => n.attrs && n.attrs.class === "ico"), "empty leaves are left out");
+  const links = nodes.filter((n) => n.tag === "a");
+  assert.equal(links.filter((n) => n.attrs && n.attrs.href).length, 5, "a navigation list: its first few items only");
+  assert.ok(links.every((n) => !n.attrs || !/[?#]/.test(n.attrs.href || "")), "no query or fragment of a link");
+  assert.ok(links.some((n) => n.text === "a link that runs code" && !n.attrs), "a javascript: link loses its href");
+  const long = nodes.find((n) => n.attrs && n.attrs["data-qa"] === "long-text");
+  assert.ok(!("id" in long.attrs), "an id over 200 characters is left out");
+  assert.ok(long.attrs.class.length <= 200 && /^c0 c1 .* c\d+$/.test(long.attrs.class), long.attrs.class);
+  assert.ok(long.text.length <= 100 && long.text.startsWith("word word"), long.text);
+});
+
+test("readOutline: stops at the caps, in document order (elements, depth, bytes)", () => {
+  // 120 levels deep, then 5,000 more elements
+  let deep = h("div", { class: "bottom" }, "the bottom");
+  for (let i = 0; i < 120; i++) deep = h("div", { class: `l${i}` }, `level ${i}`, deep);
+  const many = h("section", { id: "many" }, ...Array.from({ length: 100 }, (_, i) => h("ul", { class: "g" }, ...Array.from({ length: 50 }, (_, j) => h("li", {}, `Item ${i}.${j}`)))));
+  let r = withPage(h("body", {}, h("main", {}, deep), many), "Deep", () => readOutline(OUTLINE_ARGS));
+  let st = outlineStats(r.outline.root);
+  assert.ok(st.depth <= 60 && st.elements <= 2000 && st.elements > 1900, JSON.stringify(st));
+  assert.equal(checkOutline(r.outline).bad, null);
+  assert.ok(r.cut);
+  // long attributes and multi-byte texts: the byte cap first
+  const names = ["id", "class", "role", "itemprop", "itemtype", "aria-label", "datetime", "title", "data-testid", "data-test", "data-qa", "data-automation", "data-cy"];
+  const fat = () => h("p", Object.fromEntries(names.map((n) => [n, "ä".repeat(199)])), "😀 Umlaute äöü ".repeat(10));
+  r = withPage(h("body", {}, ...Array.from({ length: 1000 }, fat)), "Wide", () => readOutline(OUTLINE_ARGS));
+  const req = workOutRequest("job", "https://jobs.example.org/role/1", r.outline);
+  assert.equal(checkOutline(req.outline).bad, null);
+  assert.ok(jsonBytes(req) <= 200000 && jsonBytes(req) > 150000, String(jsonBytes(req)));
+  for (const n of allNodes(req.outline.root).slice(1)) {
+    assert.equal(Object.keys(n.attrs).length, 12);
+    assert.ok(n.text.length <= 100 && !/[\ud800-\udbff]$/.test(n.text), "no half of an emoji at the cut");
+  }
+});
+
+test("readOutline: no body, or a body that isn't an element's name, gives nothing", () => {
+  assert.equal(withPage(null, "", () => readOutline(OUTLINE_ARGS)), null);
+  assert.equal(withPage(h("frameset", {}), "", () => readOutline(OUTLINE_ARGS)), null);
+});
+
+test("workOutRequest: an outline over a cap is cut to fit, in document order; the request's shape", () => {
+  const big = { title: "t".repeat(400), root: h2o(3000) };
+  const req = workOutRequest("careers", "https://careers.acme.example/jobs", big);
+  assert.deepEqual(Object.keys(req), ["kind", "url", "outline"]);
+  assert.equal(req.outline.title.length, 300);
+  const st = outlineStats(req.outline.root);
+  assert.equal(st.elements, 2000);
+  assert.equal(checkOutline(req.outline).bad, null);
+  // too many bytes
+  const fat = { root: { tag: "body", children: Array.from({ length: 1500 }, () => ({ tag: "p", text: "中".repeat(100), attrs: { title: "中".repeat(200) } })) } };
+  const r2 = workOutRequest("job", "https://x.example/1", fat);
+  assert.ok(jsonBytes(r2) <= OUTLINE_LIMITS.bytes && outlineStats(r2.outline.root).elements > 50, String(jsonBytes(r2)));
+  // too deep
+  let deep = { tag: "div" };
+  for (let i = 0; i < 80; i++) deep = { tag: "div", children: [deep] };
+  assert.equal(outlineStats(workOutRequest("job", "https://x.example/1", { root: deep }).outline.root).depth, 60);
+  // no title key when there is none; nothing without a root
+  assert.deepEqual(workOutRequest("job", "https://x.example/1", { title: "", root: { tag: "body" } }), { kind: "job", url: "https://x.example/1", outline: { root: { tag: "body" } } });
+  assert.equal(workOutRequest("job", "https://x.example/1", null), null);
+  assert.equal(workOutRequest("job", "https://x.example/1", { title: "", root: { tag: "body", text: "x".repeat(300000) } }), null);
+  // truncateOutline keeps the first elements in document order
+  const t = truncateOutline({ tag: "a", children: [{ tag: "b", children: [{ tag: "c" }] }, { tag: "d" }] }, 3);
+  assert.deepEqual(t, { tag: "a", children: [{ tag: "b", children: [{ tag: "c" }] }] });
+});
+function h2o(n) {
+  return { tag: "body", children: Array.from({ length: n }, (_, i) => ({ tag: "li", text: `Job ${i}` })) };
+}
+
+test("siteOf: the site of a page (Part 8, 8.8), or nothing for addresses the app can't take", () => {
+  assert.equal(siteOf("WWW.Seek.com.au"), "seek.com.au");
+  assert.equal(siteOf("jobs.example.org."), "jobs.example.org");
+  assert.equal(siteOf("127.0.0.1"), "127.0.0.1");
+  assert.equal(siteOf("localhost"), "localhost");
+  assert.equal(siteOf("xn--bcher-kva.example"), "xn--bcher-kva.example");
+  for (const bad of ["[::1]", "my_host.example", "a..b", "-a.example", "a-.example", "", null, "bücher.example", "x".repeat(254)]) assert.equal(siteOf(bad), "", String(bad));
+  assert.equal(siteOfUrl("https://www.jobs.example.org:8443/role/77?x=1"), "jobs.example.org");
+  assert.equal(siteOfUrl("ftp://jobs.example.org/"), "");
+  assert.equal(siteOfUrl("http://[::1]:8000/"), "");
+});
+
+const JOB_MAPPING = { version: 1, kind: "job", fields: { title: { selector: "h1.jt-title" }, date: { selector: "time.posted", attribute: "datetime" }, description: { selector: "#jt-body" }, company: null } };
+
+test("jobMappingFields: a job mapping's fields, in the app's order; anything outside the shape of 8.7 is no mapping", () => {
+  assert.deepEqual(jobMappingFields(JOB_MAPPING), [
+    { name: "title", selector: "h1.jt-title", attribute: null },
+    { name: "date", selector: "time.posted", attribute: "datetime" },
+    { name: "description", selector: "#jt-body", attribute: null },
+  ]);
+  assert.ok(checkMapping(JOB_MAPPING, "job"), "the mock takes it as the app does");
+  const bad = (fields, extra = {}) => jobMappingFields({ kind: "job", fields, ...extra });
+  const ok = { title: { selector: "h1" }, description: { selector: "main" } };
+  assert.ok(bad(ok));
+  assert.equal(bad({ title: { selector: "h1" } }), null, "no description");
+  assert.equal(bad({ ...ok, list: { selector: "li" } }), null, "a careers field");
+  assert.equal(bad({ ...ok, company: { selector: "a", attribute: "onclick" } }), null, "an event handler");
+  assert.equal(bad({ ...ok, company: { selector: "a", attribute: "1x" } }), null);
+  assert.equal(bad({ ...ok, company: { selector: "a", code: "x" } }), null, "another key");
+  for (const sel of ["h1{}", "a[href^=javascript:x]", "div/* x */", "p\\31", "a<b", "", " ", "x".repeat(301), "@import x"]) {
+    assert.equal(bad({ ...ok, company: { selector: sel } }), null, sel);
+  }
+  assert.equal(bad(ok, { kind: "careers" }), null);
+  assert.equal(bad(ok, { version: 2 }), null);
+  assert.equal(jobMappingFields(null), null);
+  assert.equal(jobMappingFields({ kind: "job", fields: [] }), null);
+  assert.deepEqual(bad({ ...ok, company: { selector: "a", attribute: "Content" } })[1], { name: "company", selector: "a", attribute: "content" });
+});
+
+test("readMapped: the browser's selector functions only; a selector the browser rejects is a field not found; values cut", () => {
+  const body = h("body", {},
+    h("h1", { class: "t" }, "  Lead\n  Engineer "),
+    h("time", { datetime: "2026-10-01" }, "1 Oct"),
+    h("div", { id: "d" }, h("p", {}, "One."), h("p", {}, "Two.")),
+    h("span", { class: "huge" }, "x".repeat(9000)),
+  );
+  const index = { "h1.t": body.children[0], time: body.children[1], "#d": body.children[2], ".huge": body.children[3] };
+  const qs = (sel) => {
+    if (sel === "div:bogus(") throw new SyntaxError("not a valid selector");
+    return index[sel] || null;
+  };
+  const fields = [
+    { name: "title", selector: "h1.t", attribute: null },
+    { name: "company", selector: "div:bogus(", attribute: null },
+    { name: "location", selector: ".nowhere", attribute: null },
+    { name: "salary", selector: ".huge", attribute: null },
+    { name: "date", selector: "time", attribute: "datetime" },
+    { name: "description", selector: "#d", attribute: null },
+  ];
+  const v = withPage(body, "", () => readMapped(fields, { short: LIMITS.short, description: 20 }), qs);
+  assert.deepEqual(v, { title: "Lead Engineer", salary: "x".repeat(LIMITS.short), date: "2026-10-01", description: "One.\n\nTwo.".slice(0, 20).trim() });
+});
+
+test("needsMapping: only when the page's own reading found no title or no description", () => {
+  assert.equal(needsMapping({ job: { title: "A", method: "jsonld", description: "d", description_from: "structured" } }), false);
+  assert.equal(needsMapping({ job: { title: "A", method: "site", description: "d", description_from: "site" } }), false);
+  assert.equal(needsMapping({ job: { title: "A", method: "site", description: "d", description_from: "selection" } }), false);
+  assert.equal(needsMapping({ job: { title: "A", method: "page", description: "d", description_from: "body" } }), true);
+  assert.equal(needsMapping({ job: { title: "A", method: "jsonld", description: "d", description_from: "main" } }), true);
+  assert.equal(needsMapping({ job: { title: "", method: "page", description: "", description_from: "" } }), true);
+});
+
+test("applyMappedValues: what the mapping found fills the job, cut to its limits; no title is no use", () => {
+  const page = extractJob({ url: "https://jobs.example.org/role/77", page_title: "Lead | Northwind", h1: "Lead", description: "Body text of the whole page.", description_source: "body" }, NO_DOM);
+  const got = applyMappedValues(page, {
+    title: "T".repeat(700),
+    company: "Northwind Traders",
+    location: " Melbourne\n VIC ",
+    salary: "$95,000",
+    employment_type: "E".repeat(150),
+    work_mode: "Hybrid (3 days in the office)",
+    date: "2026-10-01",
+    description: "One.\r\n\r\n\r\nTwo.  ",
+  });
+  assert.equal(got.url, page.url);
+  const j = got.job;
+  assert.equal(j.title.length, 500);
+  assert.equal(j.company, "Northwind Traders");
+  assert.equal(j.location_text, "Melbourne VIC");
+  assert.equal(j.employment_type.length, 100);
+  assert.equal(j.work_mode, "hybrid");
+  assert.equal(j.posted_at, "2026-10-01");
+  assert.equal(j.description, "One.\n\nTwo.");
+  assert.equal(j.description_from, "site");
+  assert.equal(j.method, "site");
+  const body = buildBody(got);
+  assert.equal(body.job.method, "site");
+  assert.equal(body.job.posted_at, "2026-10-01");
+  // a date that isn't one is left out; a field the mapping didn't find keeps the page's own value; selection wins
+  const sel = { ...page, job: { ...page.job, description: "Picked.", description_from: "selection" } };
+  const j2 = applyMappedValues(sel, { title: "Lead", date: "last week", description: "From the layout" }).job;
+  assert.equal(j2.posted_at, "");
+  assert.equal(j2.company, page.job.company);
+  assert.equal(j2.description, "Picked.");
+  assert.equal(applyMappedValues(page, { title: "  ", description: "x" }), null);
+  assert.equal(applyMappedValues(page, {}), null);
+  assert.equal(applyMappedValues(page, { title: "Lead", description: "x".repeat(200000) }).job.description.length, 100000);
+});
+
+test("mappedWorkMode and mappedPreview", () => {
+  assert.equal(mappedWorkMode("Remote"), "remote");
+  assert.equal(mappedWorkMode("Work from home"), "remote");
+  assert.equal(mappedWorkMode("On-site"), "onsite");
+  assert.equal(mappedWorkMode("In office"), "onsite");
+  assert.equal(mappedWorkMode("Hybrid / remote"), "hybrid");
+  assert.equal(mappedWorkMode("Flexible"), "");
+  const p = mappedPreview(jobMappingFields(JOB_MAPPING), { title: " Lead ", date: "2026-10-01T09:00:00+10:00" });
+  assert.deepEqual(p, [{ field: "title", value: "Lead" }, { field: "date", value: "2026-10-01T09:00:00+10:00" }, { field: "description", value: "" }]);
+});

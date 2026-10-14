@@ -65,6 +65,16 @@
 
     <section role="tabpanel" id="panel-job" aria-labelledby="tab-job">
       <div id="job-status" class="status hidden" role="status" aria-live="polite"></div>
+      <div id="map-box" class="status hidden" role="status" aria-live="polite"></div>
+      <section id="map-review" class="review hidden" aria-labelledby="map-review-title">
+        <h2 id="map-review-title" tabindex="-1">The job this layout finds</h2>
+        <p id="map-review-note" class="small"></p>
+        <dl id="map-fields" class="facts found"></dl>
+        <div class="actions-bar">
+          <button type="button" id="map-accept" class="primary">Use this layout</button>
+          <button type="button" id="map-reject">Don't use it</button>
+        </div>
+      </section>
       <form id="job-form" class="hidden" autocomplete="off">
         <div id="job-existing" class="status warn hidden"></div>
         <label for="f-title">Title</label>
@@ -122,7 +132,7 @@
 
     <section role="tabpanel" id="panel-source" aria-labelledby="tab-source" class="hidden">
       <form id="source-form" autocomplete="off">
-        <p class="small muted">A careers page or job board that JobHuntPA's searches should crawl.</p>
+        <p class="small muted">A careers page or job board that JobHuntPA's searches should crawl. For the page you have open, JobHuntPA first shows you the jobs it finds there.</p>
         <label for="s-url">Page address</label>
         <input id="s-url" type="url" required maxlength="2048">
         <label for="s-label">Label (optional)</label>
@@ -133,6 +143,16 @@
         </div>
       </form>
       <div id="source-status" class="status hidden" role="status" aria-live="polite"></div>
+      <section id="source-review" class="review hidden" aria-labelledby="source-review-title">
+        <h2 id="source-review-title" tabindex="-1">Jobs JobHuntPA found on this page</h2>
+        <p id="source-found" class="small"></p>
+        <ul id="source-sample" class="samples"></ul>
+        <ul id="source-notes" class="notes"></ul>
+        <div class="actions-bar">
+          <button type="button" id="source-confirm" class="primary">Add as a source</button>
+          <button type="button" id="source-cancel">Cancel</button>
+        </div>
+      </section>
     </section>
     </div>
   </main>
