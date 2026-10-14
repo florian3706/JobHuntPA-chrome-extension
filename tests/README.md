@@ -15,8 +15,8 @@ AI mappings (api 3, Part 8 of the app's `docs/design/open-source.md`): a job sit
 `{kind, url, outline}`; the outline holds none of the page's scripts, styles, comments, form values, hidden parts,
 event handlers, bad element names, SVG insides or link queries, and the mock checks it as strictly as the app does),
 the job the layout finds shown field by field, nothing saved before **Use this layout**, a 409 `too_many_mappings`
-(the app's detail shown, nothing saved), the PUT (the checked layout, rebuilt, at the page's own site even when the
-answer names something else as the site), the job saved with method `site`; the saved layout used the next time without a work-out; a changed page (`job-mapped-changed.html`,
+(the app's detail shown, nothing saved), the PUT (the checked layout, rebuilt, at the page's own site unless the
+answer's site is a valid site name), the job saved with method `site`; the saved layout used the next time without a work-out; a changed page (`job-mapped-changed.html`,
 `/role/78`) where it no longer finds a title, offered again; the work-out's errors (AI not set up, busy, not worked
 out, AI failed, timed out, an answer with a mapping outside the shape of 8.7), a slow answer, an answer that finds no title, an older server (nothing looked up); a
 mapping in the page (an event-handler attribute refused, a selector the browser rejects is a field not found, values

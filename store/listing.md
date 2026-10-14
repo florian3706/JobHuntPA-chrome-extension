@@ -1,8 +1,9 @@
-# Store listing (draft)
+# Chrome Web Store listing (draft)
 
-Drafts for the Chrome Web Store and Firefox Add-ons (addons.mozilla.org, AMO). Publishing is the maintainer's step;
-copy the parts below into each store's form. The privacy statement is in [`privacy.md`](privacy.md): host it (for
-example as this file on GitHub) and give its address as the privacy policy link.
+The draft for the Chrome Web Store; the Firefox add-on's listing (AMO) is in the Firefox repository (see *Firefox*
+below). Publishing is the maintainer's step; copy the parts below into the store's form. The privacy statement is in
+[`privacy.md`](privacy.md): host it (for example as this file on GitHub) and give its address as the privacy policy
+link.
 
 Everything here describes version 1.3.0. Check it again when the permissions or what the extension sends change.
 
@@ -12,19 +13,13 @@ JobHuntPA
 
 ## Short description
 
-Chrome Web Store, at most 132 characters (this is also the manifest's `description`):
+At most 132 characters (this is also the manifest's `description`):
 
 > Add the page you are viewing to your own JobHuntPA server: a job, a page of search results, or a company source.
 
-AMO summary, at most 250 characters:
-
-> Companion to JobHuntPA, the self-hosted job-search app. Add the job you are looking at, the jobs of a search results
-> page, or a careers page to your own JobHuntPA server. No account with anyone else, no analytics, no AI key in the
-> browser.
-
 ## Category
 
-Chrome Web Store: *Productivity* (or *Tools*). AMO: *Other*.
+*Productivity* (or *Tools*).
 
 ## Long description
 
@@ -48,10 +43,12 @@ Chrome Web Store: *Productivity* (or *Tools*). AMO: *Other*.
 > - **Add a careers page as a source** that JobHuntPA's searches read. JobHuntPA first reads the page itself and shows
 >   you the jobs it finds there before anything is saved.
 >
-> **Your data stays yours.** The extension sends what it reads only to the JobHuntPA server address you enter, and
-> only when you open its popup and use it. It never sends the page's HTML, scripts, styles or anything you typed
-> into the page's forms. There are no analytics, no ads, no tracking and no third parties. The full privacy statement
-> is at <privacy statement link>.
+> **Your data stays yours.** The extension sends what it reads only to the JobHuntPA server address you enter, and only
+> when you open its popup or press one of its buttons. Opening the popup on a web page (any page except a page of search
+> results it recognises) sends what it read there to your JobHuntPA, to check whether the job is already saved: the
+> address, title and description, which may be the visible text of the page's main part or whole page. It never sends
+> the page's HTML, scripts, styles or anything you typed into the page's forms. There are no analytics, no ads, no
+> tracking and no third parties. The full privacy statement is at <privacy statement link>.
 >
 > **You need JobHuntPA** (free, open source, for Windows, macOS and Linux): install it, then in JobHuntPA open
 > Settings, Browser extension, Connect a browser extension, and paste the server address and key it shows into the
@@ -96,9 +93,10 @@ no background work on pages and no remote code. 1.3.0 asks for nothing that 1.2.
 What the extension sends goes only to the user's own JobHuntPA server (see [`privacy.md`](privacy.md)); the developer
 receives nothing. Tick:
 
-- **Website content**: the job read from the page, the job cards of a results page, the text you selected, the trimmed
-  outline of a page you ask JobHuntPA to work out.
-- **Web history**: the addresses (and a site's name) of the pages you add or have worked out.
+- **Website content**: the job read from a page you open the popup on (its description may be the visible text of the
+  page's main part or whole page), the job cards of a results page, the text you selected, the trimmed outline of a
+  page you ask JobHuntPA to work out.
+- **Web history**: the addresses (and a site's name) of the pages you open the popup on, add or have worked out.
 - **Authentication information**: the extension key you paste, sent only to the server that issued it, as the
   credential for its API.
 
@@ -106,21 +104,11 @@ Leave the others unticked (personally identifiable, health, financial, personal 
 activity). Certify all three: the data is not sold to third parties; it is not used or transferred for purposes
 unrelated to the item's single purpose; it is not used to determine creditworthiness or for lending.
 
-## Firefox: data collection (`data_collection_permissions`)
+## Firefox
 
-AMO counts as data transmission anything "handled outside of the add-on or the local browser", which includes
-sending to a server the user runs. By that definition the extension transmits **website content** (the job, the
-results page's cards, the selection, the outline) and **browsing activity** (the addresses of the pages you add or
-have worked out) to the user's own server. The Firefox manifest's declaration should say so:
-
-```json
-"data_collection_permissions": { "required": ["websiteContent", "browsingActivity"] }
-```
-
-Both types qualify for implicit consent (each sending is the direct result of the user opening the popup or pressing
-a button). Whether the extension key counts as `authenticationInfo` (it goes only to the server that issued it) is the
-maintainer's call for the AMO review. The AMO listing's description must also say what is transmitted; the long
-description above does.
+The Firefox add-on's AMO listing, including its `data_collection_permissions` declaration, is the Firefox
+repository's own `store/listing.md`:
+<https://github.com/florian3706/JobHuntPA-firefox-extension/blob/main/store/listing.md>.
 
 ## Screenshots
 

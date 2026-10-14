@@ -95,29 +95,29 @@ Everything goes **only to the JobHuntPA server you connected**, with the extensi
 cookies. There are no analytics, no telemetry, no ads and no third parties; the extension talks to no other server.
 The full statement, with every request, is [`store/privacy.md`](store/privacy.md). In short:
 
-- **Opening the popup** checks the key. On a job ad it also sends the job the extension read, to ask whether JobHuntPA
-  already has it (nothing is saved by that): the page address, the job's title, company, location, salary, employment
-  type, work mode and posting date, and the job description as plain text. The description is the page's own job
-  description where the extension finds one (the page's job data, or the description element of a site it knows);
+- **Opening the popup** checks the key. Opening it on a web page (any page except a page of search results it
+  recognises, whether or not the page is a job ad) also sends what it read there to your JobHuntPA, to ask whether the
+  job is already saved (nothing is saved by that): the page address, the job's title, company, location, salary,
+  employment type, work mode and posting date, and the job description as plain text. The description is the page's own
+  job description where the extension finds one (the page's job data, or the description element of a site it knows);
   otherwise it is the visible text of the page's main part, or of the whole page. The form shows you which. If you
-  selected text on the page, that text is sent as the description instead. **Save job** sends the job with your
-  edits.
+  selected text on the page, that text is sent as the description instead. **Save job** sends the job with your edits.
 - **On a page of search results** nothing about the page is sent until you press **Add jobs**; then it sends the
   page address and, for each job you ticked, its own address and what its card shows (title, company, location,
   salary, work type, classification, the date it was listed and the short summary). Whether the site marks a job as
   new to you, viewed or applied stays in the popup.
 - **Working a page out.** When the page's own reading finds no job title and description, the popup asks your server
-  whether a layout is saved for the page's site (the site's name, such as `jobs.example.org`, is all it sends for
-  that). When you press **Work out this site**, or **Add source** on the careers page you have open, it sends the
-  page's address and a **trimmed outline** of the page: for each part of the page that is shown, its element name
-  (`div`, `h1`, ...), a few of its attributes (`id`, `class`, `role`, `itemprop`, `itemtype`, `itemscope`,
-  `aria-label`, `href` without its query or fragment, `datetime`, `title` and the `data-testid` / `data-test` /
-  `data-qa` / `data-automation` / `data-cy` test names, each at most 200 characters) and a sample of its own text (at
-  most 100 characters), plus the page's title; at most 2,000 parts, 60 levels and 200,000 bytes. It never holds the
-  page's HTML, scripts, styles, frames, comments, anything of the page's head, anything hidden, the insides of an SVG,
-  or the text of form fields and editable areas. **Use this layout** sends the layout (selectors and attribute names
-  only). Your JobHuntPA sends the outline to the AI provider you set up in it and drops it with the request; it is
-  never stored or logged.
+  whether a layout is saved for the page's site (the site's name, such as `jobs.example.org`, is all it sends for that).
+  When you press **Work out this site**, or **Add source** on the careers page you have open, it sends the page's
+  address and a **trimmed outline** of the page: for each part of the page that is shown, its element name (`div`, `h1`,
+  ...), a few of its attributes (`id`, `class`, `role`, `itemprop`, `itemtype`, `itemscope`, `aria-label`, `href`
+  without its query or fragment, `datetime`, `title` and the `data-testid` / `data-test` / `data-qa` / `data-automation`
+  / `data-cy` test names, each at most 200 characters) and a sample of its own text (at most 100 characters), plus the
+  page's title; at most 2,000 parts, 60 levels and 200,000 bytes. It never holds the page's HTML, scripts, styles,
+  frames, comments, anything of the page's head, anything marked hidden (the `hidden` attribute, `aria-hidden` or
+  `display: none`), the insides of an SVG, or the text of form fields and editable areas. **Use this layout** sends the
+  layout (selectors and attribute names only). Your JobHuntPA sends the outline to the AI provider you set up in it and
+  drops it with the request; it is never stored or logged.
 - **Add source** sends the address, your label and, when JobHuntPA worked one out, its layout for the page.
 
 **Never sent:** the page's HTML, its scripts, styles and script data, its cookies, what you type into its forms,
@@ -137,13 +137,14 @@ workspaces' names, and the key's name and expiry date. Nothing about the pages y
 
 There is no `<all_urls>` host permission, no content script on every page, no remote code, no analytics. Version 1.3.0
 asks for no new permission: the outline and the saved layouts use the same `activeTab` and `scripting` as reading a
-job. The reasons for each permission, as given to the stores, are in [`store/listing.md`](store/listing.md).
+job. The reasons for each permission, as given to the Chrome Web Store, are in [`store/listing.md`](store/listing.md).
 
 ## Reporting a security problem
 
-Please don't report a security problem in a public issue. Email **`<security contact address: to be filled in before
-publishing>`** with what you found, how to reproduce it, and the versions of the extension, the browser and
-JobHuntPA. Other bugs and questions:
+Please report a security problem privately, not in a public issue: use GitHub's **private vulnerability reporting**
+on this repository (the **Security** tab, then **Report a vulnerability**), or email
+**SECURITY-CONTACT@REPLACE-ME.invalid**. Say what you found, how to reproduce it, and the versions of the extension,
+Chrome and JobHuntPA. You should get an answer within two weeks. There is no bug bounty. Other bugs and questions:
 [the issue tracker](https://github.com/florian3706/JobHuntPA-chrome-extension/issues).
 
 ## Licence
@@ -172,5 +173,5 @@ repository.
   files, `LICENSE` and `THIRD-PARTY.md`; upload it in the Developer Dashboard and bump `version` in `manifest.json`
   for every upload). The listing drafts are in [`store/`](store/).
 
-The Firefox repository has the same source and the same `store/` drafts; only `manifest.json`, this README and
-`.gitignore` differ.
+The Firefox repository has the same code, `LICENSE` and `store/privacy.md`; its `manifest.json`, README,
+`.gitignore`, `THIRD-PARTY.md` and `store/listing.md` (the AMO listing) are its own, and the tests live only here.

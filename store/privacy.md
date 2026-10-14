@@ -8,8 +8,11 @@ For the JobHuntPA extension for Chrome and for Firefox, version 1.3.0.
   **only to the JobHuntPA server address you entered**, and to nothing else.
 - The developer runs no server and receives nothing: no account, no analytics, no telemetry, no crash reports, no
   ads, no third parties.
-- It reads only the tab you open its popup on, in your own browser, and sends only when you open the popup and use
-  it. It never sends the page's HTML, scripts or styles, cookies, or anything you typed into the page's forms.
+- It reads only the tab you open its popup on, in your own browser, and sends only when you open the popup or press
+  one of its buttons. Opening the popup on a web page (any page except a page of search results it recognises) sends
+  what it read there to your JobHuntPA, to check whether the job is already saved: the address, title and
+  description, which may be the visible text of the page's main part or whole page. It never sends the page's HTML,
+  scripts or styles, cookies, or anything you typed into the page's forms.
 - It holds no AI key and never talks to an AI service. Working a page out is done by your JobHuntPA (below).
 
 ## Who handles your data
@@ -26,7 +29,7 @@ The extension reads a page only when you open its popup on it, and only that tab
 browser, with the browser's own functions: nothing is downloaded, and the page isn't changed or clicked. It reads:
 
 - the page's address, its canonical address, its title, a few of its meta values (`og:title`, `og:site_name`,
-  `description`), its first visible main heading;
+  `description`, `og:description`), its first visible main heading;
 - the job data the page itself publishes for search engines (JSON-LD `JobPosting`), when it has any;
 - on job sites the extension knows (SEEK, LinkedIn, Indeed, Greenhouse, Lever, Workday, SmartRecruiters, Ashby,
   Workable), the elements those sites use for the job's details;
@@ -46,7 +49,7 @@ chosen workspace, and carries no cookies.
 | When | What is sent |
 | --- | --- |
 | You open the popup | A status check (is the key still valid, which workspaces are there). |
-| You open the popup on a job ad | The job the extension read, to check whether JobHuntPA already has it: the page's address and canonical address, and the job's title, company, location, salary, employment type, work mode, date posted, its own address from the page's job data, the description as plain text (at most 100,000 characters), and where the description and title came from. Nothing is saved by this. |
+| You open the popup on a web page (any page except a page of search results the extension recognises), whether or not it is a job ad | What the extension read there, as a job, to check whether JobHuntPA already has it: the page's address and canonical address, and the job's title, company, location, salary, employment type, work mode, date posted, its own address from the page's job data, the description as plain text (at most 100,000 characters; on a page without a description element the extension recognises, this is the visible text of the page's main part or of the whole page), and where the description and title came from. Nothing is saved by this. |
 | The page's own reading found no job title or description (a site the extension doesn't know) | The site's name, such as `jobs.example.org`, to look up whether a layout is saved for it. |
 | You press **Save job** | The same job, with your edits from the form. |
 | You press **Add jobs** on a page of search results | The page's address and, for each job you ticked, its own address and what its card shows (title, company, location, salary, work type, classification, the date it was listed, the short summary). Which jobs the site marks as new to you, viewed or applied stays in the popup. On a results page nothing is sent about the page before you press Add. |
@@ -60,8 +63,9 @@ its element name (such as `div` or `h1`), a few of its attributes (`id`, `class`
 `itemscope`, `aria-label`, `href` without its query or fragment, `datetime`, `title` and the test names
 `data-testid`, `data-test`, `data-qa`, `data-automation`, `data-cy`; each at most 200 characters) and a sample of its
 own text (at most 100 characters), plus the page's title. It is capped at 2,000 parts, 60 levels and 200,000 bytes.
-It never holds the page's HTML, scripts, styles, frames, comments, anything of the page's head, anything hidden,
-the insides of an SVG, or any text of form fields or editable areas (input fields, text areas, lists to pick from).
+It never holds the page's HTML, scripts, styles, frames, comments, anything of the page's head, anything marked hidden
+(the `hidden` attribute, `aria-hidden` or `display: none`), the insides of an SVG, or any text of form fields or
+editable areas (input fields, text areas, lists to pick from).
 
 **Never sent:** the page's HTML, its scripts, styles and script data, cookies or anything else the site stores in your
 browser, what you type into the page's forms, other tabs, your browsing history, or anything at all while the popup
@@ -90,7 +94,8 @@ until you disconnect the extension in JobHuntPA (Settings, Browser extension), s
 
 Use an `https://` address when JobHuntPA is reached over a network you don't control (a Tailscale name, a reverse
 proxy); `http://` is meant for the same computer or your home network. The key only lets the extension add jobs and
-sources, list your workspaces and sources, and have pages worked out; it can't read your jobs, documents or settings.
+sources, list your workspaces and sources, have pages worked out, look up, save and forget site layouts, and see
+whether a job is already saved (with its title and status); it can't read your jobs, documents or settings.
 To report a security problem, see *Reporting a security problem* in the extension's README.
 
 ## Changes
