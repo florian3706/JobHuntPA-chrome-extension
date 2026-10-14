@@ -120,8 +120,9 @@ The full statement, with every request, is [`store/privacy.md`](store/privacy.md
   for the site points to); otherwise the visible text of the page's main part, or of the whole page, which includes any
   text typed into an editable part of the page (such as a rich-text box). The form shows you which. The same is sent
   again when you press **Read page again** or pick another workspace. On a page of search results that shows no job of
-  its own, it is sent only once you open the **Add job** tab, and after that again when you press **Read page again** on
-  that tab or pick another workspace. **Save job** sends the job with your edits.
+  its own, it is sent when you open the **Add job** tab, and again when you open that tab after **Read page again**
+  (which goes back to the list of jobs), or when you pick another workspace after it was sent. **Save job** sends the
+  job with your edits.
 - **On a page of search results** that shows no job of its own, nothing about the page is sent until you press **Add
   jobs** or open the **Add job** tab, which sends what the extension read there as on any other page; when it also shows
   one, that job is sent at once, as above. **Add jobs** sends the page address and, for each job you ticked, its own
@@ -144,8 +145,8 @@ The full statement, with every request, is [`store/privacy.md`](store/privacy.md
 - **Add source** sends the address, your label and, when JobHuntPA worked one out, its layout for the page.
 
 **Never sent:** the page's HTML, its scripts, styles and script data, its cookies, the values of the page's form fields
-(what you type into inputs, text areas and lists), other tabs, your browsing history, or anything while the popup is
-closed.
+(what you type into inputs, text areas and lists), other tabs, your browsing history, or anything about any page while
+the popup is closed (the options page sends only the status check).
 
 **Kept in the browser** (`storage.local`, never synced): the server address, the key, the chosen workspace, your
 workspaces' names, and the key's name and expiry date. Nothing about the pages you visit is kept.

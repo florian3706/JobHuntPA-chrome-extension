@@ -21,7 +21,7 @@ edit anything, to check whether the job is already saved: the page's address, th
 description that may be the visible text of the page's main part or of the whole page. Nothing is saved by that; **Save
 job** sends the job with your edits. The run checks that the preview's body is only `{url, canonical_url, job}` with
 plain-text values, that it is sent again when the workspace changes, and that, on a page of search results that shows no
-job of its own, it is sent only once the **Add job** tab is opened (`pages/results-seek.html` shows none; a results page
+job of its own, it is sent only when the **Add job** tab is opened (`pages/results-seek.html` shows none; a results page
 that also shows a job, which sends that job at once, is not one of the run's pages).
 
 AI mappings (api 3, Part 8 of the app's `docs/design/open-source.md`): a job site the extension doesn't know
