@@ -431,7 +431,7 @@ test("listingNote: how many jobs, and how many the board marks as new to you", (
 // ---------- AI mappings (api 3): the outline, the site, a mapping applied ----------
 
 import { createRequire } from "node:module";
-import { siteOf, siteOfUrl, jobMappingFields, workOutRequest, truncateOutline, outlineStats, jsonBytes, OUTLINE_LIMITS } from "../lib/mapping.js";
+import { siteOf, siteOfUrl, jobMappingFields, jobMappingOf, workOutRequest, truncateOutline, outlineStats, jsonBytes, OUTLINE_LIMITS } from "../lib/mapping.js";
 import { readOutline, readMapped, OUTLINE_ARGS as PAGE_ARGS, LIMITS } from "../lib/capture.js";
 const OUTLINE_ARGS = { ...PAGE_ARGS, asJson: false };
 import { needsMapping, applyMappedValues, mappedWorkMode, mappedPreview } from "../lib/extract.js";
@@ -643,6 +643,17 @@ test("jobMappingFields: a job mapping's fields, in the app's order; anything out
   assert.equal(jobMappingFields(null), null);
   assert.equal(jobMappingFields({ kind: "job", fields: [] }), null);
   assert.deepEqual(bad({ ...ok, company: { selector: "a", attribute: "Content" } })[1], { name: "company", selector: "a", attribute: "content" });
+  assert.equal(bad(ok, { evil: "x" }), null, "a top-level key other than version, kind and fields");
+  assert.ok(bad(ok, { version: 1 }));
+});
+
+test("jobMappingOf: the checked fields rebuilt as the mapping that is saved (PUT), in the app's shape", () => {
+  const fields = jobMappingFields({ kind: "job", fields: { description: { selector: " #jt-body " }, date: { selector: "time.posted", attribute: " DateTime " }, title: { selector: "h1.jt-title", attribute: null }, company: null } });
+  const m = jobMappingOf(fields);
+  assert.deepEqual(m, { version: 1, kind: "job", fields: { title: { selector: "h1.jt-title" }, date: { selector: "time.posted", attribute: "datetime" }, description: { selector: "#jt-body" } } });
+  assert.deepEqual(Object.keys(m.fields), ["title", "date", "description"], "the app's field order");
+  assert.deepEqual(checkMapping(m, "job"), m, "the mock (the app's check) takes it unchanged");
+  assert.deepEqual(jobMappingFields(m), fields, "a round trip");
 });
 
 test("readMapped: the browser's selector functions only; a selector the browser rejects is a field not found; values cut", () => {

@@ -528,6 +528,7 @@ async function signIn(serverUrl) {
     check("mapping: the saved layout was looked up (none yet), nothing else about the page was sent", l.some((x) => x.method === "GET" && x.path === `/api/extension/mappings/${site}`) && !l.some((x) => x.path === "/api/extension/work-out"), JSON.stringify(l.map((x) => x.path)));
   }
   await popup.screenshot({ path: path.join(OUT, "popup-map-offer.png") });
+  await mode("oddsite"); // the mock answers with a site that isn't one ("../../api/sources"): the page's own is used
   await popup.click(workOutBtn);
   if (REAL) {
     // The real app checks the outline as the contract says before it asks the AI, which isn't set up there
@@ -535,6 +536,7 @@ async function signIn(serverUrl) {
     check("real: work-out without the AI says so (the outline passed the app's checks)", /needs the AI/i.test(await mapBox(popup)) && (await popup.locator("#map-box button", { hasText: "Open JobHuntPA" }).count()) === 1, await mapBox(popup));
   } else {
     await popup.waitForSelector("#map-review:not(.hidden)");
+    await mode("ok");
     const f = await reviewed(popup);
     check("mapping: the job the layout finds is shown, field by field", f.Title === "Customer Success Lead" && f.Company === "Northwind Traders" && f.Location === "Melbourne VIC" && f.Salary === "$95,000 – $110,000 + super" && f["Employment type"] === "Full time" && f["Work mode"] === "Hybrid" && f.Posted === "2026-10-01" && /^Look after our customers/.test(f.Description) && /Own renewals/.test(f.Description), JSON.stringify(f));
     check("mapping: the review says what it is and can be accepted", /worked out where jobs\.example\.org shows each part of a job/.test(await popup.textContent("#map-review-note")) && (await popup.isVisible("#map-accept")), await popup.textContent("#map-review-note"));
@@ -556,11 +558,18 @@ async function signIn(serverUrl) {
     sizes.push(["work-out (job page)", wo.bytes]);
     check("mapping: nothing saved before it is accepted", Object.keys((await state()).mappings).length === 0);
     await popup.screenshot({ path: path.join(OUT, "popup-map-review.png") });
+    // 409 too_many_mappings: the account already has the 500 layouts the app keeps
+    await mode("toomany");
+    await popup.click("#map-accept");
+    await popup.waitForSelector("#map-box.error");
+    check("mapping: 409 too_many_mappings shows the app's detail, nothing saved", /You have saved 500 sites' layouts/.test(await mapBox(popup)) && Object.keys((await state()).mappings).length === 0 && (await popup.isVisible("#map-accept")), await mapBox(popup));
+    await mode("ok");
     await popup.click("#map-accept");
     await popup.waitForSelector("#map-box.ok");
     check("mapping: accepted and saved for the site", /^Saved\. JobHuntPA uses this layout for jobs\.example\.org from now on/.test(await mapBox(popup)), await mapBox(popup));
     const put = (await state()).log.filter((x) => x.method === "PUT").pop();
-    check("mapping: PUT /api/extension/mappings/<site> with {mapping}, the app's answer as it was", put && put.path === `/api/extension/mappings/${site}` && Object.keys(put.body).join(",") === "mapping" && JSON.stringify(put.body.mapping) === JSON.stringify((await state()).mappings[site].mapping) && put.body.mapping.kind === "job", JSON.stringify(put && put.body));
+    check("mapping: PUT /api/extension/mappings/<the page's site> with {mapping}, the checked layout", put && put.path === `/api/extension/mappings/${site}` && Object.keys(put.body).join(",") === "mapping" && JSON.stringify(put.body.mapping) === JSON.stringify((await state()).mappings[site].mapping) && JSON.stringify(put.body.mapping) === JSON.stringify(JOB_SITE_MAPPING), JSON.stringify(put && put.body));
+    check("mapping: no PUT anywhere but the site's address", (await state()).log.filter((x) => x.method === "PUT").every((x) => x.path === `/api/extension/mappings/${site}`), JSON.stringify((await state()).log.filter((x) => x.method === "PUT").map((x) => x.path)));
     eq("mapping: the form now has the job it found (company)", await popup.inputValue("#f-company"), "Northwind Traders");
     eq("mapping: ... location", await popup.inputValue("#f-location"), "Melbourne VIC");
     eq("mapping: ... work mode", await popup.inputValue("#f-mode"), "hybrid");
@@ -626,6 +635,7 @@ async function signIn(serverUrl) {
       ["notworked", /couldn't work out this site/, true],
       ["aifail", /AI service didn't answer/, true],
       ["timedout", /more than 10 minutes/, true],
+      ["hostile", /answer had no page layout this extension can use/, true], // a mapping with another top-level key
     ]) {
       if (m !== "noai") {
         await popup.close();
@@ -662,7 +672,7 @@ async function signIn(serverUrl) {
     await mode("ok");
     check("work-out: a layout that finds no title here can't be used", /finds no job title on this page, so it can't be used/.test(await popup.textContent("#map-review-note")) && !(await popup.isVisible("#map-accept")) && (await popup.textContent("#map-reject")) === "Close", await popup.textContent("#map-review-note"));
     await popup.click("#map-reject");
-    check("work-out: closing it saves nothing", /Not used: nothing was saved/.test(await mapBox(popup)) && (await state()).log.filter((x) => x.method === "PUT").length === 1, await mapBox(popup));
+    check("work-out: closing it saves nothing (the 409 and the accepted PUT only)", /Not used: nothing was saved/.test(await mapBox(popup)) && (await state()).log.filter((x) => x.method === "PUT").length === 2, await mapBox(popup));
     await popup.close();
     // a server from before AI mappings: nothing is looked up or offered
     await reset();

@@ -14,10 +14,11 @@ AI mappings (api 3, Part 8 of the app's `docs/design/open-source.md`): a job sit
 (`pages/job-mapped.html`, served for `https://jobs.example.org/role/77`): the offer, the work-out request (only
 `{kind, url, outline}`; the outline holds none of the page's scripts, styles, comments, form values, hidden parts,
 event handlers, bad element names, SVG insides or link queries, and the mock checks it as strictly as the app does),
-the job the layout finds shown field by field, nothing saved before **Use this layout**, the PUT, the job saved with
-method `site`; the saved layout used the next time without a work-out; a changed page (`job-mapped-changed.html`,
+the job the layout finds shown field by field, nothing saved before **Use this layout**, a 409 `too_many_mappings`
+(the app's detail shown, nothing saved), the PUT (the checked layout, rebuilt, at the page's own site even when the
+answer names something else as the site), the job saved with method `site`; the saved layout used the next time without a work-out; a changed page (`job-mapped-changed.html`,
 `/role/78`) where it no longer finds a title, offered again; the work-out's errors (AI not set up, busy, not worked
-out, AI failed, timed out), a slow answer, an answer that finds no title, an older server (nothing looked up); a
+out, AI failed, timed out, an answer with a mapping outside the shape of 8.7), a slow answer, an answer that finds no title, an older server (nothing looked up); a
 mapping in the page (an event-handler attribute refused, a selector the browser rejects is a field not found, values
 cut to the limits) and two pages over the caps (`outline-deep.html`: 120 levels, 20,000 more elements;
 `outline-wide.html`: long attributes and texts) whose outlines are cut to fit. "Add as a source" on the open careers

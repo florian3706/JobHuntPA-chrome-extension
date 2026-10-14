@@ -298,7 +298,11 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
             if (state.mode === "aifail") return err(res, 502, "The AI service didn't answer. Check its settings in JobHuntPA, or try again later.", "ai_failed");
             const hit = JOB_ANSWERS.find(([re]) => re.test(body.url));
             if (!hit || state.mode === "notworked") return err(res, 422, "JobHuntPA couldn't work out this site: the AI didn't answer with a page layout it can use. Try again, or type the job's details in.", "not_worked_out");
-            return send(res, 200, { site, kind: "job", worked_out: true, mapping: checkMapping({ kind: "job", fields: hit[1] }, "job") });
+            const mapping = checkMapping({ kind: "job", fields: hit[1] }, "job");
+            // "hostile": an answer not in the shape of 8.7 (another top-level key); "oddsite": a site that isn't one
+            if (state.mode === "hostile") return send(res, 200, { site: "../../api/sources", kind: "job", worked_out: true, mapping: { ...mapping, evil: "x" } });
+            if (state.mode === "oddsite") return send(res, 200, { site: "../../api/sources", kind: "job", worked_out: true, mapping });
+            return send(res, 200, { site, kind: "job", worked_out: true, mapping });
           }
           const hit = CAREERS_ANSWERS.find(([re]) => re.test(body.url));
           if (!hit) return send(res, 200, { site, kind: "careers", url: body.url, worked_out: false, mapping: null, test: { ok: false, error: "The page could not be fetched (HTTP 403).", notes: [] } });
@@ -328,6 +332,8 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
           if (!body || typeof body !== "object" || Object.keys(body).join(",") !== "mapping") return err(res, 422, "Send {mapping}.", "invalid", undefined, "mapping");
           const m = checkMapping(body.mapping, "job");
           if (!m) { state.violations.push("PUT of a mapping not in the shape of 8.7"); return err(res, 422, "The page layout can't be used: It isn't a mapping JobHuntPA can use.", "invalid_mapping", undefined, "mapping"); }
+          // "toomany": the account already has the 500 saved layouts the app keeps (Part 8, 8.2 and 8.8)
+          if (!row && state.mode === "toomany") return err(res, 409, "You have saved 500 sites' layouts, the most there can be. Forget some you no longer use (Settings).", "too_many_mappings");
           const updated_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
           state.mappings[site] = { mapping: m, updated_at };
           return send(res, row ? 200 : 201, { site, mapping: m, updated_at, created: !row });

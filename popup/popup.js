@@ -5,7 +5,7 @@ import { loadConfig, saveConfig, hasServerAccess, resetSetup } from "../lib/conf
 import { activeTab, capturePage, CaptureError, isReadableUrl, captureOutline, readMappedValues } from "../lib/capture.js";
 import { extractJob, buildBody, notesFor, extractListing, buildListBody, listingNote, LIST_LIMITS } from "../lib/extract.js";
 import { needsMapping, applyMappedValues, mappedPreview } from "../lib/extract.js";
-import { siteOfUrl, jobMappingFields, workOutRequest, FIELD_LABELS } from "../lib/mapping.js";
+import { siteOf, siteOfUrl, jobMappingFields, jobMappingOf, workOutRequest, FIELD_LABELS } from "../lib/mapping.js";
 
 let cfg = null;
 let tab = null;
@@ -22,7 +22,7 @@ let pageExtracted = null; // the job as the page's own reading found it, before 
 let mapChecked = false; // the site's saved mapping was looked up for this reading of the page
 let mapBusy = false;
 let mapSeq = 0; // a new reading of the page makes the answer of a work-out still running for the old one moot
-let mapState = null; // the mapping being shown for acceptance: { site, mapping, values }
+let mapState = null; // the mapping being shown for acceptance: { site, fields, values }
 let srcState = null; // the careers page being shown for acceptance: { url, label, mapping }
 
 // A work-out may take up to 10 minutes on the server, which always answers before 15 (Part 8, 8.6).
@@ -583,7 +583,7 @@ async function onWorkOut() {
     if (!fields) {
       return setStatus(box, "JobHuntPA's answer had no page layout this extension can use. Try again, or type the job's details in.", { kind: "error", actions: [["Try again", onWorkOut]] });
     }
-    showReview(typeof r.site === "string" && r.site ? r.site : site, r.mapping, fields, await readMappedValues(tab, fields));
+    showReview(siteOf(r.site) || site, fields, await readMappedValues(tab, fields)); // the answer's site only when it is one
   } catch (err) {
     if (seq === mapSeq) workOutError(box, err, onWorkOut);
   } finally {
@@ -592,7 +592,7 @@ async function onWorkOut() {
 }
 
 /** Shows the job the worked-out layout finds on this page, field by field, before the person accepts it. */
-function showReview(site, mapping, fields, values) {
+function showReview(site, fields, values) {
   const dl = $("#map-fields");
   clear(dl);
   for (const { field, value } of mappedPreview(fields, values)) {
@@ -601,7 +601,7 @@ function showReview(site, mapping, fields, values) {
     dl.append(el("dd", { class: value ? "" : "none", text: value ? text : "not found on this page" }));
   }
   const usable = !!applyMappedValues(pageExtracted, values);
-  mapState = usable ? { site, mapping, values } : null;
+  mapState = usable ? { site, fields, values } : null;
   $("#map-review-note").textContent = usable
     ? `JobHuntPA's AI worked out where ${site} shows each part of a job. On this page it finds:`
     : `JobHuntPA's AI answered with a layout for ${site}, but it finds no job title on this page, so it can't be used.`;
@@ -612,10 +612,11 @@ function showReview(site, mapping, fields, values) {
   $("#map-review-title").focus();
 }
 
-/** Saves the layout for the site (PUT) and fills the form with the job it found. */
+/** Saves the layout for the site (PUT: the checked layout, rebuilt) and fills the form with the job it found. */
 async function onAcceptMapping() {
   if (!mapState) return;
-  const { site, mapping, values } = mapState;
+  const { site, fields, values } = mapState;
+  const mapping = jobMappingOf(fields);
   const btn = $("#map-accept");
   const box = $("#map-box");
   btn.disabled = true;
@@ -631,9 +632,10 @@ async function onAcceptMapping() {
       renderJob(extracted.job);
       renderExisting(preview ? preview.existing : null);
     }
-    setStatus(box, `Saved. JobHuntPA uses this layout for ${typeof r.site === "string" && r.site ? r.site : site} from now on. The form shows the job it found: check it, then save the job.`, { kind: "ok" });
+    setStatus(box, `Saved. JobHuntPA uses this layout for ${siteOf(r.site) || site} from now on. The form shows the job it found: check it, then save the job.`, { kind: "ok" });
   } catch (err) {
-    if (err.status === 403 && err.code === "token_scope") setStatus(box, OLD_MAPPING, { kind: "warn" });
+    if (err.status === 403 && err.code === "token_scope" && (cfg.api || 1) < MAPPING_API) setStatus(box, OLD_MAPPING, { kind: "warn" });
+    else if (err.status === 409) setStatus(box, err.detail || "JobHuntPA can't keep another site's layout.", { kind: "error" });
     else setError(box, err, cfg, [["Try again", onAcceptMapping]]);
   } finally {
     btn.disabled = false;

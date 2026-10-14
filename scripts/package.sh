@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Builds dist/jobhuntpa-<browser>-<version>.zip containing only the extension files (no tests, no scripts).
+# Builds dist/jobhuntpa-<browser>-<version>.zip containing only the extension files and its licence (no tests, no
+# scripts).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BROWSER="chrome"
@@ -8,7 +9,7 @@ VERSION=$(python3 -c 'import json;print(json.load(open("manifest.json"))["versio
 OUT="dist/jobhuntpa-${BROWSER}-${VERSION}.zip"
 mkdir -p dist
 rm -f "$OUT"
-FILES=(manifest.json background.js lib popup options css icons)
+FILES=(manifest.json background.js lib popup options css icons LICENSE THIRD-PARTY.md)
 if command -v zip >/dev/null 2>&1; then
   zip -X -r -q "$OUT" "${FILES[@]}" -x '*.DS_Store'
 else
