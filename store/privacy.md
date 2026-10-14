@@ -10,13 +10,14 @@ For the JobHuntPA extension for Chrome and for Firefox, version 1.3.0.
   ads, no third parties.
 - It reads only the tab you open its popup on, in your own browser, and sends only when you open the popup or the
   options page or press one of their buttons. Opening the popup on a web page, whether or not it is a job ad (any page
-  except a page of search results the extension recognises, which so far means SEEK's, that shows no job of its own;
-  when a results page also shows one, such as a job open beside the list in SEEK's split view or a job in the page's job
-  data, that job is sent at once as on any other page), sends what the extension read there to your JobHuntPA server at
-  once, before you edit anything, to check whether the job is already saved: the page's address, the job's title and
-  details, and a description that may be the visible text of the page's main part or of the whole page. Nothing is saved
-  by that; **Save job** sends the job with your edits. It never sends the page's HTML, scripts or styles, cookies, or
-  the values of the page's form fields (what you type into inputs, text areas and lists).
+  except a page of search results the extension recognises, which so far means SEEK's, that shows no job of its own,
+  where what it read is sent only once you open the **Add job** tab; when a results page also shows one, such as a job
+  open beside the list in SEEK's split view or a job in the page's job data, that job is sent at once as on any other
+  page), sends what the extension read there to your JobHuntPA server at once, before you edit anything, to check
+  whether the job is already saved: the page's address, the job's title and details, and a description that may be the
+  visible text of the page's main part or of the whole page. Nothing is saved by that; **Save job** sends the job with
+  your edits. It never sends the page's HTML, scripts or styles, cookies, or the values of the page's form fields (what
+  you type into inputs, text areas and lists).
 - It holds no AI key and never talks to an AI service. Working a page out is done by your JobHuntPA (below).
 
 ## Who handles your data
@@ -54,29 +55,32 @@ chosen workspace, and carries no cookies.
 
 | When | What is sent |
 | --- | --- |
-| You open the popup or the options page, or press Connect | A status check (is the key still valid, which workspaces are there). |
-| You open the popup on a web page (any page except a page of search results the extension recognises, which so far means SEEK's, that shows no job of its own; when a results page also shows one, such as a job open beside the list in SEEK's split view or a job in the page's job data, that job is sent at once as on any other page), whether or not it is a job ad | What the extension read there, as a job, to check whether JobHuntPA already has it: see *Opening the popup sends what it read*, below the table. Nothing is saved by this. |
-| The page's own reading found no job title or description (a site the extension doesn't know) | The site's name, such as `jobs.example.org`, to look up whether a layout is saved for it. |
+| You open the popup or the options page, or press **Connect**, **Check connection** or **Read page again** | A status check (is the key still valid, which workspaces are there). |
+| You open the popup on a web page (any page except a page of search results the extension recognises, which so far means SEEK's, that shows no job of its own, where what it read is sent only once you open the **Add job** tab; when a results page also shows one, such as a job open beside the list in SEEK's split view or a job in the page's job data, that job is sent at once as on any other page), whether or not it is a job ad | What the extension read there, as a job, to check whether JobHuntPA already has it: see *Opening the popup sends what it read*, below the table. Nothing is saved by this. |
+| You open the **Add job** tab on a page of search results that shows no job of its own | What the extension read there, as a job, as when you open the popup on any other page: see *Opening the popup sends what it read*, below the table. Nothing is saved by this. |
+| You open the popup, or press **Read page again**, on a page where the extension's own reading finds no job title or no job description (on any site, known or not, but not on a page of search results) | The site's name, such as `jobs.example.org`, to look up whether a layout is saved for it. |
 | You press **Save job** | The same job, with your edits from the form. |
-| You press **Add jobs** on a page of search results | The page's address and, for each job you ticked, its own address and what its card shows (title, company, location, salary, work type, work arrangement (on-site, hybrid, remote), classification, the date it was listed, the short summary and its bullet points). Which jobs the site marks as new to you, viewed or applied stays in the popup. On a results page that shows no job of its own, nothing is sent about the page before you press Add; when it also shows one, that job is sent as soon as the popup opens (see the rows above). |
+| You press **Add jobs** on a page of search results | The page's address and, for each job you ticked, its own address and what its card shows (title, company, location, salary, work type, work arrangement (on-site, hybrid, remote), classification, the date it was listed, the short summary and its bullet points). Which jobs the site marks as new to you, viewed or applied stays in the popup. On a results page that shows no job of its own, nothing about the page is sent until you press **Add jobs** or open the **Add job** tab, which sends what the extension read there as on any other page; when it also shows one, that job is sent as soon as the popup opens (see the rows above). |
 | You press **Work out this site**, or **Add source** for the careers page you have open | The page's address and its **trimmed outline** (below). |
 | You press **Use this layout** | The layout, for the page's site: CSS selectors and attribute names only, nothing of the page. |
 | You press **Add source** or **Add as a source** | The address, the label you typed and, when JobHuntPA worked one out, the layout it found for that page. |
 | You press **Test** | Which of your sources to test. |
 
 **Opening the popup sends what it read.** When you open the popup on a web page, whether or not it is a job ad (any page
-except a page of search results the extension recognises, which so far means SEEK's, that shows no job of its own; when
-a results page also shows one, such as a job open beside the list in SEEK's split view or a job in the page's job data,
-that job is sent at once as on any other page), the extension sends what it read there to your JobHuntPA server at once,
-before you edit anything, to check whether the job is already saved; nothing is saved by that. It sends the page's
-address and canonical address and the job as read: title, company, location, salary, employment type, work mode, date
-posted, the job's own address from the page's job data, where the title and description came from, and the description
-as plain text (at most 100,000 characters). The description is the text you selected on the page, if any; otherwise the
-page's own job description (its job data, the description element of a site the extension knows, or what a layout saved
-in JobHuntPA for the site points to); otherwise the visible text of the page's main part, or of the whole page, which
-includes any text typed into an editable part of the page (such as a rich-text box). The form shows you which. The same
-is sent again when you press **Read page again** or pick another workspace; on a page of search results that shows no
-job of its own, it waits until you open the **Add job** tab. **Save job** sends the job with your edits.
+except a page of search results the extension recognises, which so far means SEEK's, that shows no job of its own, where
+what it read is sent only once you open the **Add job** tab; when a results page also shows one, such as a job open
+beside the list in SEEK's split view or a job in the page's job data, that job is sent at once as on any other page),
+the extension sends what it read there to your JobHuntPA server at once, before you edit anything, to check whether the
+job is already saved; nothing is saved by that. It sends the page's address and canonical address and the job as read:
+title, company, location, salary, employment type, work mode, date posted, the job's own address from the page's job
+data, where the title and description came from, and the description as plain text (at most 100,000 characters). The
+description is the text you selected on the page, if any; otherwise the page's own job description (its job data, the
+description element of a site the extension knows, or what a layout saved in JobHuntPA for the site points to);
+otherwise the visible text of the page's main part, or of the whole page, which includes any text typed into an editable
+part of the page (such as a rich-text box). The form shows you which. The same is sent again when you press **Read page
+again** or pick another workspace. On a page of search results that shows no job of its own, it is sent only once you
+open the **Add job** tab, and after that again when you press **Read page again** on that tab or pick another workspace.
+**Save job** sends the job with your edits.
 
 **The trimmed outline** is built in your browser from the page you have open: for each part of the page that is not
 marked hidden, its element name (such as `div` or `h1`), a few of its attributes (`id`, `class`, `role`, `itemprop`,

@@ -12,14 +12,14 @@ Free software under the GNU General Public License, version 3 only (`GPL-3.0-onl
 - **Add job**: the extension reads the posting in the page you are looking at (title, company, location, salary, work
   mode, description), right in your browser, and fills in the form; you check or edit the fields and save. Opening the
   popup on a web page, whether or not it is a job ad (any page except a page of search results the extension recognises,
-  which so far means SEEK's, that shows no job of its own; when a results page also shows one, such as a job open beside
-  the list in SEEK's split view or a job in the page's job data, that job is sent at once as on any other page), sends
-  what the extension read there to your JobHuntPA server at once, before you edit anything, to check whether the job is
-  already saved: the page's address, the job's title and details, and a description that may be the visible text of the
-  page's main part or of the whole page. Nothing is saved by that; **Save job** sends the job with your edits. (See
-  [What it sends](#what-it-sends).) If the job is already there, the popup says so and lets you update it. Because the
-  page is read in your own browser, postings behind a sign-in work too. Select the ad's text first to use only that as
-  the description.
+  which so far means SEEK's, that shows no job of its own, where what it read is sent only once you open the **Add job**
+  tab; when a results page also shows one, such as a job open beside the list in SEEK's split view or a job in the
+  page's job data, that job is sent at once as on any other page), sends what the extension read there to your JobHuntPA
+  server at once, before you edit anything, to check whether the job is already saved: the page's address, the job's
+  title and details, and a description that may be the visible text of the page's main part or of the whole page.
+  Nothing is saved by that; **Save job** sends the job with your edits. (See [What it sends](#what-it-sends).) If the
+  job is already there, the popup says so and lets you update it. Because the page is read in your own browser, postings
+  behind a sign-in work too. Select the ad's text first to use only that as the description.
 - **Jobs on this page**: on a SEEK search results page (any view or page of it, such as *New to you* or sorted
   by date) the popup lists the jobs on the page with tick boxes and adds the ticked ones in one go, each from the
   summary on its card. Jobs SEEK marks as new to you are ticked to start with. Jobs JobHuntPA already has are left
@@ -105,39 +105,42 @@ Everything goes **only to the JobHuntPA server you connected**, with the extensi
 cookies. There are no analytics, no telemetry, no ads and no third parties; the extension talks to no other server.
 The full statement, with every request, is [`store/privacy.md`](store/privacy.md). In short:
 
-- **Opening the popup or the options page, or pressing Connect,** checks the key (is it still valid, which workspaces
-  are there).
+- **Opening the popup or the options page, or pressing Connect, Check connection or Read page again,** checks the key
+  (is it still valid, which workspaces are there).
 - **Opening the popup sends what it read.** When you open the popup on a web page, whether or not it is a job ad (any
   page except a page of search results the extension recognises, which so far means SEEK's, that shows no job of its
-  own; when a results page also shows one, such as a job open beside the list in SEEK's split view or a job in the
-  page's job data, that job is sent at once as on any other page), the extension sends what it read there to your
-  JobHuntPA server at once, before you edit anything, to check whether the job is already saved; nothing is saved by
-  that. It sends the page's address and canonical address and the job as read: title, company, location, salary,
-  employment type, work mode, date posted, the job's own address from the page's job data, where the title and
-  description came from, and the description as plain text (at most 100,000 characters). The description is the text you
-  selected on the page, if any; otherwise the page's own job description (its job data, the description element of a
-  site the extension knows, or what a layout saved in JobHuntPA for the site points to); otherwise the visible text of
-  the page's main part, or of the whole page, which includes any text typed into an editable part of the page (such as a
-  rich-text box). The form shows you which. The same is sent again when you press **Read page again** or pick another
-  workspace; on a page of search results that shows no job of its own, it waits until you open the **Add job** tab.
-  **Save job** sends the job with your edits.
+  own, where what it read is sent only once you open the **Add job** tab; when a results page also shows one, such as a
+  job open beside the list in SEEK's split view or a job in the page's job data, that job is sent at once as on any
+  other page), the extension sends what it read there to your JobHuntPA server at once, before you edit anything, to
+  check whether the job is already saved; nothing is saved by that. It sends the page's address and canonical address
+  and the job as read: title, company, location, salary, employment type, work mode, date posted, the job's own address
+  from the page's job data, where the title and description came from, and the description as plain text (at most
+  100,000 characters). The description is the text you selected on the page, if any; otherwise the page's own job
+  description (its job data, the description element of a site the extension knows, or what a layout saved in JobHuntPA
+  for the site points to); otherwise the visible text of the page's main part, or of the whole page, which includes any
+  text typed into an editable part of the page (such as a rich-text box). The form shows you which. The same is sent
+  again when you press **Read page again** or pick another workspace. On a page of search results that shows no job of
+  its own, it is sent only once you open the **Add job** tab, and after that again when you press **Read page again** on
+  that tab or pick another workspace. **Save job** sends the job with your edits.
 - **On a page of search results** that shows no job of its own, nothing about the page is sent until you press **Add
-  jobs**; when it also shows one, that job is sent at once, as above. **Add jobs** sends the page address and, for each
-  job you ticked, its own address and what its card shows (title, company, location, salary, work type, work arrangement
-  (on-site, hybrid, remote), classification, the date it was listed, the short summary and its bullet points). Whether
-  the site marks a job as new to you, viewed or applied stays in the popup.
-- **Working a page out.** When the page's own reading finds no job title and description, the popup asks your server
-  whether a layout is saved for the page's site (the site's name, such as `jobs.example.org`, is all it sends for that).
-  When you press **Work out this site**, or **Add source** on the careers page you have open, it sends the page's
-  address and a **trimmed outline** of the page: for each part of the page that is not marked hidden, its element name
-  (`div`, `h1`, ...), a few of its attributes (`id`, `class`, `role`, `itemprop`, `itemtype`, `itemscope`, `aria-label`,
-  `href` without its query or fragment, `datetime`, `title` and the `data-testid` / `data-test` / `data-qa` /
-  `data-automation` / `data-cy` test names, each at most 200 characters) and a sample of its own text (at most 100
-  characters), plus the page's title; at most 2,000 parts, 60 levels and 200,000 bytes. It never holds the page's HTML,
-  scripts, styles, frames, comments, anything of the page's head, anything marked hidden (the `hidden` attribute,
-  `aria-hidden` or `display: none`), the insides of an SVG, or the text of form fields and editable areas. **Use this
-  layout** sends the layout (selectors and attribute names only). Your JobHuntPA sends the outline to the AI provider
-  you set up in it and drops it with the request; it is never stored or logged.
+  jobs** or open the **Add job** tab, which sends what the extension read there as on any other page; when it also shows
+  one, that job is sent at once, as above. **Add jobs** sends the page address and, for each job you ticked, its own
+  address and what its card shows (title, company, location, salary, work type, work arrangement (on-site, hybrid,
+  remote), classification, the date it was listed, the short summary and its bullet points). Whether the site marks a
+  job as new to you, viewed or applied stays in the popup.
+- **Working a page out.** When you open the popup, or press **Read page again**, on a page where the extension's own
+  reading finds no job title or no job description (on any site, known or not, but not on a page of search results), the
+  popup asks your server whether a layout is saved for the page's site (the site's name, such as `jobs.example.org`, is
+  all it sends for that). When you press **Work out this site**, or **Add source** on the careers page you have open, it
+  sends the page's address and a **trimmed outline** of the page: for each part of the page that is not marked hidden,
+  its element name (`div`, `h1`, ...), a few of its attributes (`id`, `class`, `role`, `itemprop`, `itemtype`,
+  `itemscope`, `aria-label`, `href` without its query or fragment, `datetime`, `title` and the `data-testid` /
+  `data-test` / `data-qa` / `data-automation` / `data-cy` test names, each at most 200 characters) and a sample of its
+  own text (at most 100 characters), plus the page's title; at most 2,000 parts, 60 levels and 200,000 bytes. It never
+  holds the page's HTML, scripts, styles, frames, comments, anything of the page's head, anything marked hidden (the
+  `hidden` attribute, `aria-hidden` or `display: none`), the insides of an SVG, or the text of form fields and editable
+  areas. **Use this layout** sends the layout (selectors and attribute names only). Your JobHuntPA sends the outline to
+  the AI provider you set up in it and drops it with the request; it is never stored or logged.
 - **Add source** sends the address, your label and, when JobHuntPA worked one out, its layout for the page.
 
 **Never sent:** the page's HTML, its scripts, styles and script data, its cookies, the values of the page's form fields

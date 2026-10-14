@@ -6,21 +6,23 @@ a SEEK-style `data-automation` page, a plain page, a 4 MB script-heavy page (the
 it), a selection and a page without a title; that the request is only `{url, canonical_url, job}` with plain-text values
 (the mock refuses anything else, as the contract says); a page of search results in the shape of SEEK's
 (`pages/results-seek.html`, made-up jobs: the list, the ticks, adding, adding again, an older server, an error;
-the request is only `{url, jobs}` with the ticked jobs' card values, and nothing is sent before Add); preview ("already saved?"), edit,
-save, update of an existing job, selected text, workspace switch, add source, test source, 409, restricted
-pages, 401 / 423 / 429 (rate and "busy"), stale and vanished workspaces (popup and options notices), "saved but filtered out" note, bad key, the popup's Settings (what it is connected to, check connection, reconnect, reset with its question), reset on the options page and "server down".
+the request is only `{url, jobs}` with the ticked jobs' card values, and nothing about the page is sent before Add jobs
+or before the Add job tab is opened); preview ("already saved?"), edit, save, update of an existing job, selected text,
+workspace switch, add source, test source, 409, restricted pages, 401 / 423 / 429 (rate and "busy"), stale and vanished
+workspaces (popup and options notices), "saved but filtered out" note, bad key, the popup's Settings (what it is
+connected to, check connection, reconnect, reset with its question), reset on the options page and "server down".
 
 The preview the run checks is the one the README and `store/privacy.md` describe. Opening the popup on a web page,
 whether or not it is a job ad (any page except a page of search results the extension recognises, which so far means
-SEEK's, that shows no job of its own; when a results page also shows one, such as a job open beside the list in SEEK's
-split view or a job in the page's job data, that job is sent at once as on any other page), sends what the extension
-read there to your JobHuntPA server at once, before you edit anything, to check whether the job is already saved: the
-page's address, the job's title and details, and a description that may be the visible text of the page's main part or
-of the whole page. Nothing is saved by that; **Save job** sends the job with your edits. The run checks that the
-preview's body is only `{url, canonical_url, job}` with plain-text values, that it is sent again when the workspace
-changes, and that, on a page of search results that shows no job of its own, it waits until the **Add job** tab is
-opened (`pages/results-seek.html` shows none; a results page that also shows a job, which sends that job at once, is not
-one of the run's pages).
+SEEK's, that shows no job of its own, where what it read is sent only once you open the **Add job** tab; when a results
+page also shows one, such as a job open beside the list in SEEK's split view or a job in the page's job data, that job
+is sent at once as on any other page), sends what the extension read there to your JobHuntPA server at once, before you
+edit anything, to check whether the job is already saved: the page's address, the job's title and details, and a
+description that may be the visible text of the page's main part or of the whole page. Nothing is saved by that; **Save
+job** sends the job with your edits. The run checks that the preview's body is only `{url, canonical_url, job}` with
+plain-text values, that it is sent again when the workspace changes, and that, on a page of search results that shows no
+job of its own, it is sent only once the **Add job** tab is opened (`pages/results-seek.html` shows none; a results page
+that also shows a job, which sends that job at once, is not one of the run's pages).
 
 AI mappings (api 3, Part 8 of the app's `docs/design/open-source.md`): a job site the extension doesn't know
 (`pages/job-mapped.html`, served for `https://jobs.example.org/role/77`): the offer, the work-out request (only
