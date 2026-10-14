@@ -9,11 +9,15 @@ Free software under the GNU General Public License, version 3 only (`GPL-3.0-onl
 
 ## What it does
 
-- **Add job**: the extension reads the posting in the page you are looking at (title, company, location,
-  salary, work mode, description), right in your browser, and fills in the form; you check or edit the fields
-  and save, and only the finished job is sent to your JobHuntPA server. If the job is already there, the popup
-  says so and lets you update it. Because the page is read in your own browser, postings behind a sign-in work too.
-  Select the ad's text first to use only that as the description.
+- **Add job**: the extension reads the posting in the page you are looking at (title, company, location, salary, work
+  mode, description), right in your browser, and fills in the form; you check or edit the fields and save. Opening the
+  popup on a web page, whether or not it is a job ad (any page except a page of search results the extension
+  recognises), sends what the extension read there to your JobHuntPA server at once, before you edit anything, to check
+  whether the job is already saved: the page's address, the job's title and details, and a description that may be the
+  visible text of the page's main part or of the whole page. Nothing is saved by that; **Save job** sends the job with
+  your edits. (See [What it sends](#what-it-sends).) If the job is already there, the popup says so and lets you update
+  it. Because the page is read in your own browser, postings behind a sign-in work too. Select the ad's text first to
+  use only that as the description.
 - **Jobs on this page**: on a SEEK search results page (any view or page of it, such as *New to you* or sorted
   by date) the popup lists the jobs on the page with tick boxes and adds the ticked ones in one go, each from the
   summary on its card. Jobs SEEK marks as new to you are ticked to start with. Jobs JobHuntPA already has are left
@@ -74,14 +78,18 @@ extension's card in `chrome://extensions`.
 
 1. In JobHuntPA open **Settings**, then **Browser extension**, then **Connect a browser extension**
    (needs a password entry from the last 15 minutes). Give it a name such as "Chrome on laptop".
-2. Copy the **server address** and the **extension key** (shown once). Keep the key secret: it opens your JobHuntPA
-   for adding jobs and sources.
+2. Copy the **server address** and the **extension key** (shown once). Keep the key secret: anyone who has it can do
+   with your JobHuntPA what the extension does. It only lets them add jobs and sources, list your workspaces and sources,
+   test a source, have pages worked out, look up, list, save and forget site layouts, and see whether a job is already
+   saved (with its title and status); it can't read your jobs, documents or settings.
 3. In the extension's options page paste both and press **Connect**. Chrome asks whether the extension may
    access your server; allow it. Pick a workspace if you have several.
 
-The address can be `http://127.0.0.1:8000`, `http://raspberrypi.local:8000`, a LAN IP or an https name such
-as a Tailscale one. Without a scheme, `https://` is assumed except for localhost, IP addresses and local names. Use
-`https://` whenever JobHuntPA is reached over a network you don't control.
+The address is `http://127.0.0.1:8000` when JobHuntPA runs on the same computer as the browser. JobHuntPA listens only
+on its own computer, so from another device use the `https://` address that Tailscale's `serve` or a reverse proxy on
+that computer gives it, such as `https://homeserver.tail1234.ts.net` (see JobHuntPA's [Hosting on your own
+network](https://github.com/florian3706/JobHuntPA#hosting-on-your-own-network)). Without a scheme, `https://` is
+assumed except for localhost, IP addresses and local names.
 
 To connect again later (a new key, another address), open **Settings** in the popup and press **Reconnect**,
 or open the options page: **Connect** with the key field left empty tries the saved key again.
@@ -95,13 +103,18 @@ Everything goes **only to the JobHuntPA server you connected**, with the extensi
 cookies. There are no analytics, no telemetry, no ads and no third parties; the extension talks to no other server.
 The full statement, with every request, is [`store/privacy.md`](store/privacy.md). In short:
 
-- **Opening the popup** checks the key. Opening it on a web page (any page except a page of search results it
-  recognises, whether or not the page is a job ad) also sends what it read there to your JobHuntPA, to ask whether the
-  job is already saved (nothing is saved by that): the page address, the job's title, company, location, salary,
-  employment type, work mode and posting date, and the job description as plain text. The description is the page's own
-  job description where the extension finds one (the page's job data, or the description element of a site it knows);
-  otherwise it is the visible text of the page's main part, or of the whole page. The form shows you which. If you
-  selected text on the page, that text is sent as the description instead. **Save job** sends the job with your edits.
+- **Opening the popup** checks the key (is it still valid, which workspaces are there).
+- **Opening the popup sends what it read.** When you open the popup on a web page, whether or not it is a job ad (any
+  page except a page of search results the extension recognises, which so far means SEEK's), the extension sends what it
+  read there to your JobHuntPA server at once, before you edit anything, to check whether the job is already saved;
+  nothing is saved by that. It sends the page's address and canonical address and the job as read: title, company,
+  location, salary, employment type, work mode, date posted, the job's own address from the page's job data, where the
+  title and description came from, and the description as plain text (at most 100,000 characters). The description is
+  the text you selected on the page, if any; otherwise the page's own job description (its job data, the description
+  element of a site the extension knows, or what a layout saved in JobHuntPA for the site points to); otherwise the
+  visible text of the page's main part, or of the whole page. The form shows you which. The same is sent again when you
+  press **Read page again** or pick another workspace, and, on a page of search results, when you open the **Add job**
+  tab. **Save job** sends the job with your edits.
 - **On a page of search results** nothing about the page is sent until you press **Add jobs**; then it sends the
   page address and, for each job you ticked, its own address and what its card shows (title, company, location,
   salary, work type, classification, the date it was listed and the short summary). Whether the site marks a job as
@@ -132,7 +145,7 @@ workspaces' names, and the key's name and expiry date. Nothing about the pages y
 | --- | --- |
 | `activeTab` | Read the page in the current tab, only when you open the popup. |
 | `scripting` | Run the small functions that read the job out of the page in the current tab (its address, title, structured job data, the job description's text and your text selection; on a page of search results, what each job card shows), build the page's outline when you ask JobHuntPA to work a page out, and read the job with a site's saved layout. |
-| `storage` | Keep the server address, key and chosen workspace in `storage.local` (never synced). |
+| `storage` | Keep the setup in `storage.local` (never synced): the server address, the key, the chosen workspace, your workspaces' names, and the key's name and expiry date. Nothing about the pages you visit, and no site layouts (those live in JobHuntPA). |
 | optional hosts `http://*/*`, `https://*/*` | Requested at runtime for **your server's address only**, when you press Connect. Nothing else is ever requested. |
 
 There is no `<all_urls>` host permission, no content script on every page, no remote code, no analytics. Version 1.3.0
@@ -143,9 +156,13 @@ job. The reasons for each permission, as given to the Chrome Web Store, are in [
 
 Please report a security problem privately, not in a public issue: use GitHub's **private vulnerability reporting**
 on this repository (the **Security** tab, then **Report a vulnerability**), or email
-**SECURITY-CONTACT@REPLACE-ME.invalid**. Say what you found, how to reproduce it, and the versions of the extension,
-Chrome and JobHuntPA. You should get an answer within two weeks. There is no bug bounty. Other bugs and questions:
-[the issue tracker](https://github.com/florian3706/JobHuntPA-chrome-extension/issues).
+**SECURITY-CONTACT@REPLACE-ME.invalid**. Say what you found, how to reproduce it and which version or commit you
+ran. You should get an answer within two weeks. There is no bug bounty.
+
+For the extension, "which version" means the extension's, Chrome's and JobHuntPA's. Useful to know first: JobHuntPA
+runs on its own computer and listens only on `127.0.0.1`; other devices reach it through a proxy you set up
+([Hosting on your own network](https://github.com/florian3706/JobHuntPA#hosting-on-your-own-network)). Other bugs and
+questions: [the issue tracker](https://github.com/florian3706/JobHuntPA-chrome-extension/issues).
 
 ## Licence
 

@@ -9,10 +9,12 @@ For the JobHuntPA extension for Chrome and for Firefox, version 1.3.0.
 - The developer runs no server and receives nothing: no account, no analytics, no telemetry, no crash reports, no
   ads, no third parties.
 - It reads only the tab you open its popup on, in your own browser, and sends only when you open the popup or press
-  one of its buttons. Opening the popup on a web page (any page except a page of search results it recognises) sends
-  what it read there to your JobHuntPA, to check whether the job is already saved: the address, title and
-  description, which may be the visible text of the page's main part or whole page. It never sends the page's HTML,
-  scripts or styles, cookies, or anything you typed into the page's forms.
+  one of its buttons. Opening the popup on a web page, whether or not it is a job ad (any page except a page of search
+  results the extension recognises), sends what the extension read there to your JobHuntPA server at once, before you
+  edit anything, to check whether the job is already saved: the page's address, the job's title and details, and a
+  description that may be the visible text of the page's main part or of the whole page. Nothing is saved by that;
+  **Save job** sends the job with your edits. It never sends the page's HTML, scripts or styles, cookies, or anything
+  you typed into the page's forms.
 - It holds no AI key and never talks to an AI service. Working a page out is done by your JobHuntPA (below).
 
 ## Who handles your data
@@ -39,7 +41,9 @@ browser, with the browser's own functions: nothing is downloaded, and the page i
 - when JobHuntPA has a layout saved for the site, the values that layout points to;
 - when you ask for it, the trimmed outline of the page (below).
 
-Most of this stays in the popup: you see the job in a form before anything is saved.
+From these the extension makes the job, in the popup; the meta values and the heading themselves are not sent. Opening
+the popup sends the job as read (see *Opening the popup sends what it read*, below); you see it in a form, and nothing
+is saved before you press **Save job**.
 
 ## What is sent, and when
 
@@ -49,7 +53,7 @@ chosen workspace, and carries no cookies.
 | When | What is sent |
 | --- | --- |
 | You open the popup | A status check (is the key still valid, which workspaces are there). |
-| You open the popup on a web page (any page except a page of search results the extension recognises), whether or not it is a job ad | What the extension read there, as a job, to check whether JobHuntPA already has it: the page's address and canonical address, and the job's title, company, location, salary, employment type, work mode, date posted, its own address from the page's job data, the description as plain text (at most 100,000 characters; on a page without a description element the extension recognises, this is the visible text of the page's main part or of the whole page), and where the description and title came from. Nothing is saved by this. |
+| You open the popup on a web page (any page except a page of search results the extension recognises), whether or not it is a job ad | What the extension read there, as a job, to check whether JobHuntPA already has it: see *Opening the popup sends what it read*, below the table. Nothing is saved by this. |
 | The page's own reading found no job title or description (a site the extension doesn't know) | The site's name, such as `jobs.example.org`, to look up whether a layout is saved for it. |
 | You press **Save job** | The same job, with your edits from the form. |
 | You press **Add jobs** on a page of search results | The page's address and, for each job you ticked, its own address and what its card shows (title, company, location, salary, work type, classification, the date it was listed, the short summary). Which jobs the site marks as new to you, viewed or applied stays in the popup. On a results page nothing is sent about the page before you press Add. |
@@ -57,6 +61,18 @@ chosen workspace, and carries no cookies.
 | You press **Use this layout** | The layout, for the page's site: CSS selectors and attribute names only, nothing of the page. |
 | You press **Add source** or **Add as a source** | The address, the label you typed and, when JobHuntPA worked one out, the layout it found for that page. |
 | You press **Test** | Which of your sources to test. |
+
+**Opening the popup sends what it read.** When you open the popup on a web page, whether or not it is a job ad (any
+page except a page of search results the extension recognises, which so far means SEEK's), the extension sends what it
+read there to your JobHuntPA server at once, before you edit anything, to check whether the job is already saved;
+nothing is saved by that. It sends the page's address and canonical address and the job as read: title, company,
+location, salary, employment type, work mode, date posted, the job's own address from the page's job data, where the
+title and description came from, and the description as plain text (at most 100,000 characters). The description is
+the text you selected on the page, if any; otherwise the page's own job description (its job data, the description
+element of a site the extension knows, or what a layout saved in JobHuntPA for the site points to); otherwise the
+visible text of the page's main part, or of the whole page. The form shows you which. The same is sent again when you
+press **Read page again** or pick another workspace, and, on a page of search results, when you open the **Add job**
+tab. **Save job** sends the job with your edits.
 
 **The trimmed outline** is built in your browser from the page you have open: for each part of the page that is shown,
 its element name (such as `div` or `h1`), a few of its attributes (`id`, `class`, `role`, `itemprop`, `itemtype`,
@@ -68,10 +84,10 @@ It never holds the page's HTML, scripts, styles, frames, comments, anything of t
 editable areas (input fields, text areas, lists to pick from).
 
 **Never sent:** the page's HTML, its scripts, styles and script data, cookies or anything else the site stores in your
-browser, what you type into the page's forms, other tabs, your browsing history, or anything at all while the popup
-is closed. The rest of a page's text is sent only as the job description, when the page has no description element
-the extension recognises; the form shows you that description (and where it came from) before you save, and
-selecting the ad's text first sends only that.
+browser, what you type into the page's forms, other tabs, your browsing history, or anything at all while the popup is
+closed. The rest of a page's text is sent only as the job description, when the page has no job description the
+extension recognises (see *Opening the popup sends what it read*); selecting the ad's text before you open the popup,
+or before **Read page again**, sends only that.
 
 ## What your JobHuntPA does with it
 
@@ -92,10 +108,12 @@ until you disconnect the extension in JobHuntPA (Settings, Browser extension), s
 
 ## Security
 
-Use an `https://` address when JobHuntPA is reached over a network you don't control (a Tailscale name, a reverse
-proxy); `http://` is meant for the same computer or your home network. The key only lets the extension add jobs and
-sources, list your workspaces and sources, have pages worked out, look up, save and forget site layouts, and see
-whether a job is already saved (with its title and status); it can't read your jobs, documents or settings.
+Use `http://127.0.0.1:8000` when JobHuntPA runs on the same computer as the browser. JobHuntPA listens only on its own
+computer; other devices reach it through the `https://` address that Tailscale's `serve` or a reverse proxy on that
+computer gives it, so what the extension sends is encrypted on the way. The key only lets the extension add jobs and
+sources, list your workspaces and sources, test a source, have pages worked out, look up, list, save and forget site
+layouts, and see whether a job is already saved (with its title and status); it can't read your jobs, documents or
+settings.
 To report a security problem, see *Reporting a security problem* in the extension's README.
 
 ## Changes
