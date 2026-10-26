@@ -127,6 +127,11 @@ async function signIn(serverUrl) {
     eq("status request: bearer key", l.auth, `Bearer ${key}`);
     eq("status request: no cookies", l.cookie, "");
   }
+  if (!REAL) {
+    eq("options stores the account's theme", st.theme, "catppuccin-mocha-aa");
+    eq("options paints the account's theme", await opt.evaluate(() => document.documentElement.getAttribute("data-theme")), "catppuccin-mocha-aa");
+    check("options shows the theme on the Connection card", /Catppuccin Mocha, from your JobHuntPA account/.test(await opt.textContent("#opt-theme")), await opt.textContent("#opt-theme"));
+  }
   await opt.screenshot({ path: path.join(OUT, "options.png") });
 
   // Opens the popup page in a background tab of the same window as `target`, so that
@@ -166,7 +171,15 @@ async function signIn(serverUrl) {
   eq("preview: title", await popup.inputValue("#f-title"), "Senior Analyst");
   eq("preview: company", await popup.inputValue("#f-company"), REAL ? await popup.inputValue("#f-company") : "Example Corp");
   check("preview: description present", (await popup.inputValue("#f-desc")).length > 20);
-  check("popup shows the page url", (await popup.textContent("#page-url")).includes("job-ld.html"));
+  check("popup shows the page's site and title", /127\.0\.0\.1|localhost/.test(await popup.textContent("#page-url")) && /Senior Analyst|job-ld\.html/.test(await popup.textContent("#page-url")), await popup.textContent("#page-url"));
+  if (!REAL) {
+    eq("popup paints the account's theme (from the status answer)", await popup.evaluate(() => document.documentElement.getAttribute("data-theme")), "catppuccin-mocha-aa");
+    check("popup shows once the theme is known", await popup.evaluate(() => !document.documentElement.classList.contains("theme-pending") && getComputedStyle(document.body).visibility === "visible"));
+    check("the description preview is folded away until Show", (await popup.locator("#f-desc.hidden").count()) === 1);
+    await popup.click("#desc-toggle");
+    check("Show unfolds the description preview", (await popup.locator("#f-desc:not(.hidden)").count()) === 1 && (await popup.getAttribute("#desc-toggle", "aria-expanded")) === "true");
+    await popup.click("#desc-toggle");
+  }
   check("a job page has no \"Jobs on this page\" tab", (await popup.locator("#tab-list.hidden").count()) === 1);
   await popup.screenshot({ path: path.join(OUT, "popup-job.png") });
   eq("form: location from the address parts", await popup.inputValue("#f-location"), "Berlin, BE, DE");
@@ -1009,12 +1022,8 @@ async function signIn(serverUrl) {
     check("settings: a key that stopped working says to reconnect", /Reconnect in Options/.test(await popup.textContent("#set-status")) && (await popup.locator("#set-status button", { hasText: "Open Options" }).count()) === 1, await popup.textContent("#set-status"));
     await mode("ok");
   }
-  // Reset asks first; Cancel leaves everything as it is
-  await popup.click("#set-reset");
-  await popup.waitForSelector("#reset-confirm:not(.hidden)");
-  check("settings: reset asks first, with Cancel in focus", /removes the server address, the key and the chosen workspace/.test(await popup.textContent("#reset-confirm")) && (await popup.evaluate(() => document.activeElement.id)) === "reset-no", await popup.textContent("#reset-confirm"));
-  await popup.click("#reset-no");
-  check("settings: Cancel keeps the setup", (await storage()).key === key && (await popup.locator("#reset-confirm.hidden").count()) === 1 && (await popup.evaluate(() => document.activeElement.id)) === "set-reset");
+  // Reset lives only on the options page: the popup's settings offer none
+  check("settings: no Reset in the popup (it is on the options page)", (await popup.locator("#set-reset, #reset-confirm").count()) === 0 && /reset this browser's setup/.test(await popup.textContent("#settings")));
   await popup.click("#settings-toggle");
   check("settings: Back shows the page's tabs again", (await popup.locator("#settings.hidden").count()) === 1 && (await popup.textContent("#settings-toggle")) === "Settings" && (await popup.isVisible("#job-form")));
   // Reconnect opens the options page (and closes the popup)
@@ -1026,7 +1035,7 @@ async function signIn(serverUrl) {
   opt = reopened;
   await opt.waitForSelector("#status.ok");
   check("options: says what it is connected to, with the saved key kept", /Connected to/.test(await opt.textContent("#status")) && (await opt.inputValue("#server")) === serverUrl && (await opt.inputValue("#key")) === "", await opt.textContent("#status"));
-  check("options: reconnect or reset is explained", /Reconnect or reset/.test(await opt.textContent("#manage-title")) && (await opt.isVisible("#reset")));
+  check("options: the Connection card, reconnect and reset", /Connection/.test(await opt.textContent("#manage-title")) && (await opt.textContent("#opt-server")) === serverUrl && /Reconnect with another key/.test(await opt.textContent("#connect-title")) && (await opt.isVisible("#reset")));
   // Reconnect with the saved key: Connect alone tries it again
   await opt.click("#connect");
   await opt.waitForFunction(() => /You can close this page/.test(document.querySelector("#status").textContent));
@@ -1056,21 +1065,7 @@ async function signIn(serverUrl) {
   check("options: after a reset the form is empty and there is nothing left to reset", (await opt.inputValue("#server")) === "" && (await opt.locator("#manage.hidden").count()) === 1 && /keeps working until you disconnect this extension in JobHuntPA/.test(await opt.textContent("#status")), await opt.textContent("#status"));
   popup = await openPopup(ldTab);
   await popup.waitForSelector("#setup:not(.hidden)");
-  check("popup asks to open Options when not configured", (await popup.locator("#setup-note.hidden").count()) === 1);
-  await popup.close();
-
-  // ---- Reset from the popup's settings ----
-  await sw.evaluate(([s, k]) => chrome.storage.local.set({ server: s, key: k, workspace: null, workspaces: [], label: "Test browser", expiresAt: "2027-10-09T12:00:00Z" }), [serverUrl, key]);
-  popup = await openPopup(ldTab);
-  await ready(popup);
-  await popup.click("#settings-toggle");
-  await popup.click("#set-reset");
-  await popup.click("#reset-yes");
-  await popup.waitForSelector("#setup:not(.hidden)");
-  st = await storage();
-  check("popup reset: everything is forgotten", Object.keys(st).length === 0, JSON.stringify(Object.keys(st)));
-  check("popup reset: says so and offers to connect again", /^Reset\. The server address, the key and the workspace were removed/.test(await popup.textContent("#setup-note")) && (await popup.locator("#main.hidden").count()) === 1 && (await popup.evaluate(() => document.activeElement.id)) === "open-options", await popup.textContent("#setup-note"));
-  await popup.screenshot({ path: path.join(OUT, "popup-reset.png") });
+  check("popup asks to open Options when not configured", (await popup.isVisible("#open-options")) && /Open Options/.test(await popup.textContent("#setup")));
   await popup.close();
 
   // ---- Server down ----

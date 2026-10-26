@@ -10,7 +10,7 @@ the request is only `{url, jobs}` with the ticked jobs' card values, and nothing
 or before the Add job tab is opened); preview ("already saved?"), edit, save, update of an existing job, selected text,
 workspace switch, add source, test source, 409, restricted pages, 401 / 423 / 429 (rate and "busy"), stale and vanished
 workspaces (popup and options notices), "saved but filtered out" note, bad key, the popup's Settings (what it is
-connected to, check connection, reconnect, reset with its question), reset on the options page and "server down".
+connected to, check connection, reconnect; no Reset there), reset on the options page (with its question) and "server down".
 
 The preview the run checks is the one the README and `store/privacy.md` describe. Opening the popup on a web page,
 whether or not it is a job ad (any page except a page of search results the extension recognises, which so far means

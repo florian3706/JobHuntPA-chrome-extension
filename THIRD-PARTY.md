@@ -6,8 +6,19 @@ full text is in [`LICENSE`](LICENSE).
 ## What the extension ships
 
 **No third-party code.** Everything in the extension (`manifest.json`, `background.js`, `lib/`, `popup/`,
-`options/`, `css/`, `icons/`) was written for this project. It has no runtime dependencies, no bundled
-libraries, no web fonts, and it loads nothing from the network: no remote scripts or stylesheets, no CDN.
+`options/`, `css/`, `icons/`) was written for this project or copied from JobHuntPA itself (`css/themes.css`, the
+app's themes). It has no runtime dependencies, no bundled libraries, and it loads nothing from the network: no remote
+scripts, stylesheets or fonts, no CDN. The one thing it ships that isn't code is two font files (below).
+
+## Fonts shipped with the extension
+
+| What | Licence | Where it comes in |
+| --- | --- | --- |
+| [Ubuntu Sans](https://design.ubuntu.com/font) (variable, `UbuntuSans[wdth,wght].woff2`) and Ubuntu Sans Mono (`UbuntuSansMono[wght].woff2`) | [Ubuntu Font Licence 1.0](https://ubuntu.com/legal/font-licence) | `fonts/`, the same unmodified files JobHuntPA ships in its `frontend/fonts/` (Canonical's own variable WOFF2 builds), loaded by `css/themes.css` for every theme but the Dyslexia ones, since 1.4.0; the licence text is beside them as `fonts/UFL-1.0.txt` |
+
+The Ubuntu Font Licence is not a GPL-compatible software licence, and that is fine here for the reason JobHuntPA's own
+`THIRD-PARTY.md` gives: a font file is data the pages display, not code combined with the extension's; it ships
+unmodified, under its own name, with its licence beside it, which is all the licence asks.
 
 The icons (`icons/icon-16.png` to `icons/icon-128.png`, a briefcase on a blue tile) are the project's own. They are
 drawn pixel by pixel by [`scripts/make_icons.py`](scripts/make_icons.py), which is part of this repository and uses no

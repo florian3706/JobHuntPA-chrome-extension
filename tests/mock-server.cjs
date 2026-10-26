@@ -240,7 +240,7 @@ function createMock({ port = 0, host = "127.0.0.1" } = {}) {
         // "wsgone": the account no longer has the workspace the extension stored (the server still answers 200).
         // "oldapi": a server from before it took a page of jobs
         // "api2": a server from before AI mappings
-        return send(res, 200, { ok: true, api: state.mode === "oldapi" ? 1 : state.mode === "api2" ? 2 : 3, app_version: "1.13.0", label: "Test browser", expires_at: "2027-10-09T12:00:00Z", workspaces: state.mode === "wsgone" ? WORKSPACES.slice(1) : WORKSPACES, default_workspace: state.mode === "wsgone" ? 3 : 1 });
+        return send(res, 200, { ok: true, api: state.mode === "oldapi" ? 1 : state.mode === "api2" ? 2 : 3, app_version: "1.13.0", label: "Test browser", expires_at: "2027-10-09T12:00:00Z", workspaces: state.mode === "wsgone" ? WORKSPACES.slice(1) : WORKSPACES, default_workspace: state.mode === "wsgone" ? 3 : 1, theme: "catppuccin-mocha-aa" });
       if (req.method === "POST" && /^\/api\/extension\/(preview|jobs)$/.test(url.pathname)) {
         const bad = validate(body, Buffer.byteLength(raw));
         if (bad) return err(res, bad[0], bad[1], bad[2], undefined, bad[3]);

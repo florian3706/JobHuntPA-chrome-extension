@@ -1,40 +1,67 @@
-body { width: 380px; min-height: 120px; padding: 12px 14px 14px; }
-header { margin-bottom: 8px; }
-header h1 { font-size: 15px; }
-.ws label { margin-top: 0; }
-.page-url { margin: 8px 0 0; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; max-height: 3.6em; overflow: hidden; }
-[role="tablist"] { display: flex; gap: 4px; margin: 12px 0 0; border-bottom: 1px solid var(--border); }
-[role="tab"] { border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: none; padding: 6px 12px; color: var(--muted); }
-[role="tab"][aria-selected="true"] { color: var(--text); font-weight: 600; background: var(--card); border-color: var(--border); }
-[role="tabpanel"] { padding-top: 4px; }
-.desc { height: 7.5em; font-size: 12px; }
-.notes { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+/* The popup: 400 px wide; the body scrolls, the action bar of the open form stays at the bottom (css/base.css has
+   the components; themes.css the colours). */
+body { width: 400px; min-height: 120px; }
+.body { padding: 12px 16px 14px; }
+.setup-body { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; }
+.setup-title { font-size: 20px; font-weight: 180; }
+.steps { padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+.page-url { margin: 2px 0 0; }
+
+/* The workspace row and the notices under the header, on the panel ground */
+.work-head { background: var(--panel); border-bottom: 1px solid var(--border); padding: 8px 16px 10px; }
+.ws { display: flex; gap: 10px; align-items: center; }
+.ws label { margin: 0; flex: none; }
+.ws select { flex: 1; }
+.work-head .status { margin-top: 8px; }
+
+/* Settings */
+#settings { display: flex; flex-direction: column; gap: 12px; }
+#settings .card h2 { font-size: 15px; font-weight: 550; margin: 0; }
+#settings .card .facts { margin-top: 2px; }
+#settings .card .hint { margin-top: 8px; }
+#settings .actions-bar { margin-top: 12px; }
+#settings .status { margin: 0; }
+
+/* Panels */
+[role="tabpanel"] > .status:first-child, [role="tabpanel"] > form > .status:first-child { margin-top: 0; }
+#job-form > label:first-of-type { margin-top: 0; }
+#job-existing { margin: 0 0 4px; }
+.row--fields { align-items: flex-start; }
 .actions-bar { margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.samples { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
-.samples li { margin: 2px 0; overflow-wrap: anywhere; }
-.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border-strong); border-top-color: transparent; border-radius: 50%; margin-right: 6px; vertical-align: -2px; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.list-note { margin: 8px 0 0; }
-.pick { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
-.pick button { padding: 3px 8px; font-size: 12px; }
-.joblist { list-style: none; margin: 8px 0 0; padding: 0; max-height: 236px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
-.joblist li { padding: 6px 8px; border-top: 1px solid var(--border); }
-.joblist li:first-child { border-top: 0; }
-.joblist label { display: flex; gap: 8px; align-items: flex-start; margin: 0; font-size: inherit; color: inherit; cursor: pointer; }
-.joblist input { width: auto; flex: none; margin: 3px 0 0; }
-.jobrow { min-width: 0; overflow-wrap: anywhere; }
-.jobrow-title { display: block; font-weight: 600; }
-.jobrow-meta { display: block; font-size: 12px; color: var(--muted); }
-.tag { display: inline-block; font-size: 11px; line-height: 1.5; border: 1px solid var(--border-strong); border-radius: 10px; padding: 0 6px; margin: 2px 4px 0 0; }
-.outcome { margin: 2px 0 0 21px; font-size: 12px; }
-#settings-toggle { padding: 3px 10px; font-size: 12px; }
-#settings h2 { font-size: 14px; margin: 12px 0 0; }
-.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 10px 0 0; }
-.facts dt { color: var(--muted); font-size: 12px; align-self: center; }
-.facts dd { margin: 0; overflow-wrap: anywhere; }
-.review { margin-top: 10px; padding: 8px 10px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); }
-.review h2 { font-size: 13px; margin: 0; }
+.action-bar { position: sticky; bottom: 0; z-index: 1; flex-direction: column; align-items: stretch; gap: 6px; margin: 12px -16px -14px; padding: 10px 16px; background: var(--panel); border-top: 1px solid var(--border); }
+.action-bar__row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.action-bar .hint { margin: 0; }
+
+/* The description: a row with Show/Hide instead of a read-only text area that looks editable */
+.disclosure { margin-top: 12px; border: 1px solid var(--border); background: var(--card); }
+.disclosure__row { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; }
+.disclosure__text { flex: 1; min-width: 0; margin: 0; font-size: inherit; }
+.disclosure__title { display: block; font-weight: 550; }
+.disclosure__sub { display: block; color: var(--muted); font-size: 12px; }
+.desc { border: 0; border-top: 1px solid var(--border); background: var(--card); min-height: 7.5em; font-size: 12px; resize: vertical; }
+.notes { margin-top: 10px; }
+
+/* Reviews (the job a layout finds; the jobs a careers page lists) */
+.review { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.review h2 { font-size: 15px; font-weight: 550; margin: 0; }
+.review .actions-bar { margin-top: 4px; }
 .found { grid-template-columns: max-content 1fr; }
 .found dd { white-space: pre-line; max-height: 7.5em; overflow-y: auto; }
 .found dd.none { color: var(--muted); font-style: italic; }
 .found dt { align-self: start; }
+.samples { margin: 0; padding-left: 18px; font-size: 12px; }
+.samples li { margin: 2px 0; }
+
+/* Jobs on this page */
+.list-note { margin: 0 0 10px; }
+.joblist { list-style: none; margin: 10px 0 0; padding: 0; border: 1px solid var(--border); background: var(--card); }
+.joblist li { padding: 8px 10px; border-top: 1px solid var(--border); }
+.joblist li:first-child { border-top: 0; }
+.joblist label { display: flex; gap: 10px; align-items: flex-start; margin: 0; font-size: inherit; color: inherit; cursor: pointer; }
+.joblist input { margin-top: 2px; }
+.jobrow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.jobrow-title { display: block; font-weight: 550; }
+.jobrow-meta { display: block; font-size: 12px; color: var(--muted); }
+.jobrow-labels { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.outcome { margin: 4px 0 0 30px; font-size: 12px; }
+.list-foot { margin-top: 10px; }

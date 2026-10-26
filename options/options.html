@@ -1,61 +1,94 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="vanilla-dark-aa" class="theme-pending">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>JobHuntPA Options</title>
+  <script src="../lib/theme-boot.js"></script>
+  <link rel="stylesheet" href="../css/themes.css">
   <link rel="stylesheet" href="../css/base.css">
   <link rel="stylesheet" href="options.css">
 </head>
-<body>
-  <h1>JobHuntPA extension</h1>
-  <p>Add the page you are looking at to your own JobHuntPA server: a job, the jobs on a page of search results, or a company source.</p>
-
-  <h2>How to connect</h2>
-  <ol>
-    <li>In JobHuntPA open <strong>Settings</strong>, then <strong>Browser extension</strong>, then <strong>Connect a browser extension</strong>.</li>
-    <li>Copy the server address and the extension key shown there (the key is shown only once).</li>
-    <li>Paste both below and press <strong>Connect</strong>. The browser asks whether this extension may talk to your server; allow it.</li>
-  </ol>
-
-  <form id="connect-form" class="card" autocomplete="off">
-    <label for="server">Server address</label>
-    <input id="server" type="text" inputmode="url" spellcheck="false" placeholder="http://127.0.0.1:8000" autocapitalize="off">
-    <p class="hint"><code>http://127.0.0.1:8000</code> on the same computer; from other devices, the <code>https://</code> address Tailscale or your proxy gives it, such as <code>https://my-pc.tailnet.ts.net</code>.</p>
-
-    <label for="key">Extension key</label>
-    <div class="row">
-      <input id="key" class="grow" type="password" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="jhpa_…">
-      <button type="button" id="toggle-key" aria-pressed="false">Show</button>
+<body class="page">
+  <header class="p-nav">
+    <span class="p-nav__tag" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="2.5" fill="currentColor" stroke="none"/></svg></span>
+    <div class="p-nav__text">
+      <h1 class="p-nav__title">JobHuntPA extension</h1>
+      <p class="p-nav__sub">Options · Add the page you are looking at to your own JobHuntPA server: a job, the jobs on a page of search results, or a company source.</p>
     </div>
-
-    <div class="actions-bar">
-      <button type="button" id="connect" class="primary">Connect</button>
-    </div>
-    <div id="status" class="status hidden" role="status" aria-live="polite"></div>
-
-    <div id="ws-box" class="hidden">
-      <label for="workspace">Workspace used by default</label>
-      <select id="workspace"></select>
-      <p class="hint">You can also switch workspace in the extension's popup.</p>
-    </div>
-  </form>
-
-  <section id="manage" class="hidden" aria-labelledby="manage-title">
-    <h2 id="manage-title">Reconnect or reset</h2>
-    <p><strong>Reconnect:</strong> press <strong>Connect</strong> above to try the saved key again, or first paste a new key or another server address.</p>
-    <p><strong>Reset:</strong> removes the server address, the key and the chosen workspace from this browser, and withdraws the permission for your server. The key itself keeps working until you disconnect this extension in JobHuntPA (Settings, Browser extension); do that too if the device is lost.</p>
-    <div class="actions-bar">
-      <button type="button" id="reset">Reset</button>
-    </div>
-    <div id="reset-confirm" class="status warn hidden" role="group" aria-labelledby="reset-question">
-      <p id="reset-question">Remove the whole setup from this browser? To use the extension again you connect it with a new key from JobHuntPA.</p>
-      <div class="actions">
-        <button type="button" id="reset-yes">Reset now</button>
-        <button type="button" id="reset-no">Cancel</button>
+  </header>
+  <main class="main">
+    <section id="manage" class="card hidden" aria-labelledby="manage-title">
+      <div class="card__head">
+        <h2 id="manage-title">Connection</h2>
+        <span id="opt-state" class="p-status-label p-status-label--positive">Connected</span>
       </div>
-    </div>
-  </section>
+      <dl class="facts">
+        <dt>Server</dt>
+        <dd id="opt-server"></dd>
+        <dt>Connected as</dt>
+        <dd id="opt-label"></dd>
+        <dt>Key works until</dt>
+        <dd id="opt-expires"></dd>
+        <dt>Theme</dt>
+        <dd id="opt-theme"></dd>
+      </dl>
+      <div id="ws-box" class="hidden ws-box">
+        <label for="workspace">Workspace used by default</label>
+        <select id="workspace"></select>
+        <p class="hint">You can also switch workspace in the extension's popup.</p>
+      </div>
+      <div class="actions-bar">
+        <button type="button" id="opt-check">Check connection</button>
+      </div>
+      <div id="opt-status" class="status hidden" role="status" aria-live="polite"></div>
+    </section>
+
+    <form id="connect-form" class="card" autocomplete="off" aria-labelledby="connect-title">
+      <h2 id="connect-title">Connect</h2>
+      <details id="howto" open>
+        <summary>How to get a key</summary>
+        <ol class="steps">
+          <li>In JobHuntPA open <strong>Settings</strong>, then <strong>Browser extension</strong>, then <strong>Connect a browser extension</strong>.</li>
+          <li>Copy the server address and the extension key shown there (the key is shown only once).</li>
+          <li>Paste both below and press <strong>Connect</strong>. The browser asks whether this extension may talk to your server; allow it.</li>
+        </ol>
+      </details>
+      <label for="server">Server address</label>
+      <input id="server" type="text" inputmode="url" spellcheck="false" placeholder="http://127.0.0.1:8000" autocapitalize="off">
+      <p class="hint"><code>http://127.0.0.1:8000</code> on the same computer; from other devices, the <code>https://</code> address Tailscale or your proxy gives it, such as <code>https://my-pc.tailnet.ts.net</code>.</p>
+
+      <label for="key">Extension key</label>
+      <div class="row">
+        <input id="key" class="grow" type="password" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="jhpa_…">
+        <button type="button" id="toggle-key" aria-pressed="false">Show</button>
+      </div>
+      <p class="hint" id="key-hint">When already connected, paste a key only to replace the saved one; Connect alone tries the saved key again.</p>
+
+      <div class="actions-bar">
+        <button type="button" id="connect" class="primary">Connect</button>
+      </div>
+      <div id="status" class="status hidden" role="status" aria-live="polite"></div>
+    </form>
+
+    <section id="reset-section" class="card hidden" aria-labelledby="reset-title">
+      <h2 id="reset-title">Reset this browser's setup</h2>
+      <p>Removes the server address, the key and the chosen workspace from this browser, and withdraws the permission for your server. The key itself keeps working until you disconnect this extension in JobHuntPA (Settings, Browser extension); do that too if the device is lost.</p>
+      <div class="actions-bar">
+        <button type="button" id="reset" class="negative">Reset</button>
+      </div>
+      <div id="reset-confirm" class="status warn hidden" role="group" aria-labelledby="reset-question">
+        <svg class="status__icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
+        <div class="status__body">
+          <p id="reset-question">Remove the whole setup from this browser? To use the extension again you connect it with a new key from JobHuntPA.</p>
+          <div class="actions">
+            <button type="button" id="reset-yes" class="negative">Reset now</button>
+            <button type="button" id="reset-no">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
   <script type="module" src="options.js"></script>
 </body>
 </html>
