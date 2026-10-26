@@ -1022,12 +1022,8 @@ async function signIn(serverUrl) {
     check("settings: a key that stopped working says to reconnect", /Reconnect in Options/.test(await popup.textContent("#set-status")) && (await popup.locator("#set-status button", { hasText: "Open Options" }).count()) === 1, await popup.textContent("#set-status"));
     await mode("ok");
   }
-  // Reset asks first; Cancel leaves everything as it is
-  await popup.click("#set-reset");
-  await popup.waitForSelector("#reset-confirm:not(.hidden)");
-  check("settings: reset asks first, with Cancel in focus", /removes the server address, the key and the chosen workspace/.test(await popup.textContent("#reset-confirm")) && (await popup.evaluate(() => document.activeElement.id)) === "reset-no", await popup.textContent("#reset-confirm"));
-  await popup.click("#reset-no");
-  check("settings: Cancel keeps the setup", (await storage()).key === key && (await popup.locator("#reset-confirm.hidden").count()) === 1 && (await popup.evaluate(() => document.activeElement.id)) === "set-reset");
+  // Reset lives only on the options page: the popup's settings offer none
+  check("settings: no Reset in the popup (it is on the options page)", (await popup.locator("#set-reset, #reset-confirm").count()) === 0 && /reset this browser's setup/.test(await popup.textContent("#settings")));
   await popup.click("#settings-toggle");
   check("settings: Back shows the page's tabs again", (await popup.locator("#settings.hidden").count()) === 1 && (await popup.textContent("#settings-toggle")) === "Settings" && (await popup.isVisible("#job-form")));
   // Reconnect opens the options page (and closes the popup)
@@ -1069,21 +1065,7 @@ async function signIn(serverUrl) {
   check("options: after a reset the form is empty and there is nothing left to reset", (await opt.inputValue("#server")) === "" && (await opt.locator("#manage.hidden").count()) === 1 && /keeps working until you disconnect this extension in JobHuntPA/.test(await opt.textContent("#status")), await opt.textContent("#status"));
   popup = await openPopup(ldTab);
   await popup.waitForSelector("#setup:not(.hidden)");
-  check("popup asks to open Options when not configured", (await popup.locator("#setup-note.hidden").count()) === 1);
-  await popup.close();
-
-  // ---- Reset from the popup's settings ----
-  await sw.evaluate(([s, k]) => chrome.storage.local.set({ server: s, key: k, workspace: null, workspaces: [], label: "Test browser", expiresAt: "2027-10-09T12:00:00Z" }), [serverUrl, key]);
-  popup = await openPopup(ldTab);
-  await ready(popup);
-  await popup.click("#settings-toggle");
-  await popup.click("#set-reset");
-  await popup.click("#reset-yes");
-  await popup.waitForSelector("#setup:not(.hidden)");
-  st = await storage();
-  check("popup reset: everything is forgotten", Object.keys(st).length === 0, JSON.stringify(Object.keys(st)));
-  check("popup reset: says so and offers to connect again", /^Reset\. The server address, the key and the workspace were removed/.test(await popup.textContent("#setup-note")) && (await popup.locator("#main.hidden").count()) === 1 && (await popup.evaluate(() => document.activeElement.id)) === "open-options", await popup.textContent("#setup-note"));
-  await popup.screenshot({ path: path.join(OUT, "popup-reset.png") });
+  check("popup asks to open Options when not configured", (await popup.isVisible("#open-options")) && /Open Options/.test(await popup.textContent("#setup")));
   await popup.close();
 
   // ---- Server down ----

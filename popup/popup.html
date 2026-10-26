@@ -19,7 +19,6 @@
       </div>
     </header>
     <div class="body setup-body">
-      <p id="setup-note" class="status ok hidden" role="status" aria-live="polite"></p>
       <h2 class="setup-title">Connect this browser to your JobHuntPA</h2>
       <p>The extension sends pages only to your own server. To connect it:</p>
       <ol class="steps">
@@ -72,26 +71,9 @@
           <button type="button" id="set-check">Check connection</button>
           <button type="button" id="set-reconnect">Reconnect</button>
         </div>
-        <p class="hint">Reconnect opens the Options page, where you can connect again with a new key or another server address.</p>
+        <p class="hint">Reconnect opens the Options page, where you can connect again with a new key or another server address, or reset this browser's setup.</p>
       </div>
       <div id="set-status" class="status hidden" role="status" aria-live="polite"></div>
-      <div class="card">
-        <h2>Reset this browser's setup</h2>
-        <p class="small muted">Removes the server address, the key and the chosen workspace from this browser. To use the extension again you connect it with a new key from JobHuntPA (Settings, Browser extension).</p>
-        <div class="actions-bar">
-          <button type="button" id="set-reset" class="negative">Reset</button>
-        </div>
-      </div>
-      <div id="reset-confirm" class="status warn hidden" role="group" aria-labelledby="reset-question">
-        <svg class="status__icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
-        <div class="status__body">
-          <p id="reset-question">Reset removes the server address, the key and the chosen workspace from this browser. To use the extension again you connect it with a new key from JobHuntPA (Settings, Browser extension).</p>
-          <div class="actions">
-            <button type="button" id="reset-yes" class="negative">Reset now</button>
-            <button type="button" id="reset-no">Cancel</button>
-          </div>
-        </div>
-      </div>
     </section>
 
     <div id="work">

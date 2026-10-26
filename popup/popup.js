@@ -1,7 +1,7 @@
 import { ext } from "../lib/ext.js";
 import { $, el, clear, statusBody } from "../lib/dom.js";
 import { api, describeError, serverLink } from "../lib/api.js";
-import { loadConfig, saveConfig, hasServerAccess, resetSetup } from "../lib/config.js";
+import { loadConfig, saveConfig, hasServerAccess } from "../lib/config.js";
 import { applyTheme, followTheme, knownTheme, describeTheme } from "../lib/theme.js";
 import { activeTab, capturePage, CaptureError, isReadableUrl, captureOutline, readMappedValues } from "../lib/capture.js";
 import { extractJob, buildBody, notesFor, extractListing, buildListBody, listingNote, LIST_LIMITS } from "../lib/extract.js";
@@ -209,7 +209,7 @@ function setupWorkspaceSelect() {
   });
 }
 
-// ---------- settings: what this browser is connected to, reconnect, reset ----------
+// ---------- settings: what this browser is connected to, check it, reconnect (Reset lives on the options page) ----------
 
 function setupSettings() {
   $("#settings-toggle").addEventListener("click", () => showSettings($("#settings").classList.contains("hidden")));
@@ -218,16 +218,6 @@ function setupSettings() {
     ext.runtime.openOptionsPage(); // the browser's permission question needs a page that stays open
     window.close();
   });
-  $("#set-reset").addEventListener("click", () => {
-    show($("#set-status"), false);
-    show($("#reset-confirm"));
-    $("#reset-no").focus();
-  });
-  $("#reset-no").addEventListener("click", () => {
-    show($("#reset-confirm"), false);
-    $("#set-reset").focus();
-  });
-  $("#reset-yes").addEventListener("click", onReset);
 }
 
 function fillSettings() {
@@ -256,7 +246,6 @@ function showSettings(on) {
   }
   fillSettings();
   show($("#set-status"), false);
-  show($("#reset-confirm"), false);
   $("#settings-title").focus();
 }
 
@@ -264,7 +253,6 @@ async function onCheckConnection() {
   const box = $("#set-status");
   const btn = $("#set-check");
   btn.disabled = true;
-  show($("#reset-confirm"), false);
   setStatus(box, "Checking\u2026", { busy: true });
   show(box);
   try {
@@ -283,17 +271,6 @@ async function onCheckConnection() {
   } finally {
     btn.disabled = false;
   }
-}
-
-async function onReset() {
-  await resetSetup();
-  cfg = null;
-  show($("#main"), false);
-  const note = $("#setup-note");
-  note.textContent = "Reset. The server address, the key and the workspace were removed from this browser.";
-  show(note);
-  show($("#setup"));
-  $("#open-options").focus();
 }
 
 // ---------- add job ----------

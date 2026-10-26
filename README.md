@@ -39,9 +39,10 @@ Free software under the GNU General Public License, version 3 only (`GPL-3.0-onl
   layout, when one was needed, is saved with the source). Another address is added as before. **Test** shows how many
   postings a source has and a few samples.
 - **Settings** (the button at the top of the popup): shows the server the browser is connected to, the name
-  of its key, how long the key works and the theme it paints, with **Check connection**, **Reconnect** (opens the
-  options page to connect again, with the saved key or a new one) and **Reset** (forgets the whole setup). The
-  popup warns under its header when the key has a week or less left.
+  of its key, how long the key works and the theme it paints, with **Check connection** and **Reconnect** (opens the
+  options page to connect again, with the saved key or a new one). **Reset** (forgets the whole setup) is on the
+  options page only, since 1.4.0, so it is never one click away from the popup's main screen. The popup warns under
+  its header when the key has a week or less left.
 - **The look follows JobHuntPA** (since 1.4.0): the popup and the options page are drawn in the app's own themes
   (Ubuntu's Vanilla framework, as in JobHuntPA's redesign) and paint the theme chosen for your account in JobHuntPA
   (Settings, Theme): System follows your device between Vanilla Light and Vanilla Dark, and every other theme, from
