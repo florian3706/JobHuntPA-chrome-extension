@@ -9,7 +9,7 @@ VERSION=$(python3 -c 'import json;print(json.load(open("manifest.json"))["versio
 OUT="dist/jobhuntpa-${BROWSER}-${VERSION}.zip"
 mkdir -p dist
 rm -f "$OUT"
-FILES=(manifest.json background.js lib popup options css icons LICENSE THIRD-PARTY.md)
+FILES=(manifest.json background.js lib popup options css fonts icons LICENSE THIRD-PARTY.md)
 if command -v zip >/dev/null 2>&1; then
   zip -X -r -q "$OUT" "${FILES[@]}" -x '*.DS_Store'
 else

@@ -5,7 +5,7 @@ below). Publishing is the maintainer's step; copy the parts below into the store
 [`privacy.md`](privacy.md): host it (for example as this file on GitHub) and give its address as the privacy policy
 link.
 
-Everything here describes version 1.3.0. Check it again when the permissions or what the extension sends change.
+Everything here describes version 1.4.0. Check it again when the permissions or what the extension sends change.
 
 ## Name
 
@@ -43,6 +43,8 @@ At most 132 characters (this is also the manifest's `description`):
 > - **Add a careers page as a source** that JobHuntPA's searches read. JobHuntPA first reads the page itself and shows
 >   you the jobs it finds there before anything is saved.
 >
+> The popup looks like your JobHuntPA: it paints the theme you chose in the app, light or dark.
+>
 > **Your data stays yours.** The extension sends what it reads only to the JobHuntPA server address you enter, and only
 > when you open its popup or options page or press one of their buttons or pick another workspace in the popup. Opening
 > the popup on a web page, whether or not it is a job ad (any page except a page of search results the extension
@@ -72,7 +74,7 @@ At most 132 characters (this is also the manifest's `description`):
 
 The manifest asks for `activeTab`, `scripting` and `storage`, and for the optional host permissions `http://*/*` and
 `https://*/*`. There is no `<all_urls>` or other host permission granted at install, no content script on every page,
-no background work on pages and no remote code. 1.3.0 asks for nothing that 1.2.0 didn't.
+no background work on pages and no remote code. 1.3.0 and 1.4.0 ask for nothing that 1.2.0 didn't.
 
 | Permission | What it is used for |
 | --- | --- |

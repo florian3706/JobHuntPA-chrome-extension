@@ -1,27 +1,38 @@
 import { ext } from "../lib/ext.js";
-import { $, el, clear } from "../lib/dom.js";
+import { $, el, clear, statusBody } from "../lib/dom.js";
 import { api, normalizeServer, describeError, KEY_PATTERN } from "../lib/api.js";
 import { loadConfig, saveConfig, resetSetup, originPattern } from "../lib/config.js";
+import { applyTheme, followTheme, knownTheme, describeTheme } from "../lib/theme.js";
 
 const statusBox = $("#status");
 let current = null;
 
-function setStatus(message, kind = "") {
-  clear(statusBox);
-  statusBox.className = "status" + (kind ? ` ${kind}` : "");
-  statusBox.append(el("p", { text: message }));
+function setStatus(message, kind = "", box = statusBox, busy = false) {
+  statusBody(box, kind, busy).append(el("p", { text: message }));
+  box.classList.remove("hidden");
 }
+
+const day = (iso) => (iso ? new Date(iso).toLocaleDateString() : "unknown");
 
 function renderConnected(cfg) {
   current = cfg;
   const on = !!cfg;
   $("#manage").classList.toggle("hidden", !on);
+  $("#reset-section").classList.toggle("hidden", !on);
   $("#reset-confirm").classList.add("hidden");
+  $("#opt-status").classList.add("hidden");
+  $("#howto").open = !on; // the steps are for a first connection; afterwards they fold away
+  $("#connect-title").textContent = on ? "Reconnect with another key or server" : "Connect";
+  $("#key-hint").classList.toggle("hidden", !on);
   $("#ws-box").classList.toggle("hidden", !on || !cfg.workspaces.length);
   if (!on) return;
   $("#server").value = cfg.server;
   $("#key").value = "";
   $("#key").placeholder = "Saved. Paste a new key only to replace it.";
+  $("#opt-server").textContent = cfg.server;
+  $("#opt-label").textContent = cfg.label || "(no name)";
+  $("#opt-expires").textContent = day(cfg.expiresAt);
+  $("#opt-theme").textContent = describeTheme(cfg.theme);
   const sel = $("#workspace");
   clear(sel);
   for (const w of cfg.workspaces) sel.append(el("option", { value: String(w.id), text: w.name }));
@@ -37,31 +48,66 @@ function pickWorkspace(stored, workspaces, defaultId) {
 }
 
 async function init() {
+  followTheme();
   const cfg = await loadConfig();
   renderConnected(cfg);
   if (cfg) {
-    const until = cfg.expiresAt ? ` Key valid until ${new Date(cfg.expiresAt).toLocaleDateString()}.` : "";
+    const until = cfg.expiresAt ? ` Key valid until ${day(cfg.expiresAt)}.` : "";
     setStatus(`Connected to ${cfg.server}${cfg.label ? ` as "${cfg.label}"` : ""}.${until}`, "ok");
     await checkWorkspace(cfg);
   }
 }
 
-/** Best effort: if the stored workspace no longer exists, switch to the default and say so. */
+/** The account's theme as the status answer carries it; an older server sends none, so the stored one stays. */
+const themeOf = (s, cfg) => ("theme" in s ? knownTheme(s.theme) : (cfg && cfg.theme) || "");
+
+/**
+ * Best effort: refreshes what the Connection card shows (the key's expiry, the theme); if the stored workspace no
+ * longer exists, switches to the default and says so.
+ */
 async function checkWorkspace(cfg) {
   try {
     const s = await api(cfg, "GET", "/api/extension/status", undefined, { timeout: 15000 });
     if (current !== cfg) return; // disconnected or reconnected meanwhile
     const workspaces = (Array.isArray(s.workspaces) ? s.workspaces : []).map((w) => ({ id: w.id, name: String(w.name) }));
     const pick = pickWorkspace(cfg.workspace, workspaces, s.default_workspace);
-    await saveConfig({ workspaces, workspace: pick.id, expiresAt: s.expires_at || "" });
-    if (pick.gone) {
-      renderConnected(await loadConfig());
-      setStatus(pick.gone, "warn");
-    }
+    const theme = themeOf(s, cfg);
+    await saveConfig({ workspaces, workspace: pick.id, expiresAt: s.expires_at || "", label: s.label || cfg.label || "", theme });
+    applyTheme(theme);
+    renderConnected(await loadConfig());
+    if (pick.gone) setStatus(pick.gone, "warn");
   } catch {
     /* offline or key revoked: Connect or the popup will say so */
   }
 }
+
+/** "Check connection" on the Connection card. */
+async function onCheck() {
+  if (!current) return;
+  const cfg = current;
+  const box = $("#opt-status");
+  const btn = $("#opt-check");
+  btn.disabled = true;
+  setStatus("Checking\u2026", "", box, true);
+  try {
+    const s = await api(cfg, "GET", "/api/extension/status", undefined, { timeout: 15000 });
+    if (current !== cfg) return;
+    const theme = themeOf(s, cfg);
+    await saveConfig({ expiresAt: s.expires_at || "", label: s.label || cfg.label || "", theme });
+    applyTheme(theme);
+    renderConnected(await loadConfig());
+    setStatus("The connection works.", "ok", box);
+    $("#opt-state").textContent = "Connected";
+    $("#opt-state").className = "p-status-label p-status-label--positive";
+  } catch (err) {
+    setStatus(describeError(err, cfg).message, "error", box);
+    $("#opt-state").textContent = "Not working";
+    $("#opt-state").className = "p-status-label p-status-label--negative";
+  } finally {
+    btn.disabled = false;
+  }
+}
+$("#opt-check").addEventListener("click", onCheck);
 
 $("#toggle-key").addEventListener("click", () => {
   const input = $("#key");
@@ -134,7 +180,9 @@ async function connect(server, key, grantedPromise) {
     const pick = pickWorkspace(probe.workspace, workspaces, s.default_workspace);
     const workspace = pick.id;
     const oldServer = current?.server;
-    await saveConfig({ server, key, workspace, workspaces, label: s.label || "", expiresAt: s.expires_at || "" });
+    const theme = themeOf(s, server === oldServer ? current : null);
+    await saveConfig({ server, key, workspace, workspaces, label: s.label || "", expiresAt: s.expires_at || "", theme });
+    applyTheme(theme);
     if (oldServer && oldServer !== server) {
       ext.permissions.remove({ origins: [originPattern(oldServer)] }).catch(() => {});
     }
@@ -165,6 +213,7 @@ $("#reset-no").addEventListener("click", () => {
 });
 $("#reset-yes").addEventListener("click", async () => {
   await resetSetup();
+  applyTheme(""); // the app's default again: the theme belonged to the account this browser was connected to
   renderConnected(null);
   $("#key").placeholder = "jhpa_…";
   $("#server").value = "";

@@ -1,57 +1,95 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="vanilla-dark-aa" class="theme-pending">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>JobHuntPA</title>
+  <script src="../lib/theme-boot.js"></script>
+  <link rel="stylesheet" href="../css/themes.css">
   <link rel="stylesheet" href="../css/base.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <section id="setup" class="hidden">
-    <h1>JobHuntPA</h1>
-    <p id="setup-note" class="status ok hidden" role="status" aria-live="polite"></p>
-    <p>Connect this browser to your JobHuntPA server first.</p>
-    <button type="button" id="open-options" class="primary">Open Options</button>
+    <header class="p-nav">
+      <span class="p-nav__tag" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="2.5" fill="currentColor" stroke="none"/></svg></span>
+      <div class="p-nav__text">
+        <h1 class="p-nav__title">JobHuntPA</h1>
+        <p class="p-nav__sub">Not connected yet</p>
+      </div>
+    </header>
+    <div class="body setup-body">
+      <p id="setup-note" class="status ok hidden" role="status" aria-live="polite"></p>
+      <h2 class="setup-title">Connect this browser to your JobHuntPA</h2>
+      <p>The extension sends pages only to your own server. To connect it:</p>
+      <ol class="steps">
+        <li>In JobHuntPA, open <strong>Settings</strong>, then <strong>Browser extension</strong>, and press <strong>Connect a browser extension</strong>.</li>
+        <li>Copy the server address and the key it shows (the key is shown once).</li>
+        <li>Paste both on this extension's Options page and press <strong>Connect</strong>.</li>
+      </ol>
+      <div class="u-row"><button type="button" id="open-options" class="primary">Open Options</button></div>
+      <p class="small muted">Once connected, the popup follows the theme chosen in your JobHuntPA account.</p>
+    </div>
   </section>
 
   <main id="main" class="hidden">
-    <header>
-      <div class="row">
-        <h1 class="grow">JobHuntPA</h1>
-        <button type="button" id="settings-toggle">Settings</button>
+    <header class="p-nav">
+      <span class="p-nav__tag" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="2.5" fill="currentColor" stroke="none"/></svg></span>
+      <div class="p-nav__text">
+        <h1 class="p-nav__title">JobHuntPA</h1>
+        <p class="p-nav__sub page-url" id="page-url"></p>
       </div>
-      <div id="work-head">
-        <div class="ws">
-          <label for="workspace">Workspace</label>
-          <select id="workspace"></select>
-        </div>
-        <div id="ws-notice" class="status warn hidden" role="status" aria-live="polite"></div>
-        <p class="page-url" id="page-url"></p>
+      <div class="p-nav__tools">
+        <button type="button" id="settings-toggle" class="base">Settings</button>
       </div>
     </header>
+    <div id="work-head" class="work-head">
+      <div class="ws">
+        <label for="workspace">Workspace</label>
+        <select id="workspace"></select>
+      </div>
+      <div id="ws-notice" class="status warn hidden" role="status" aria-live="polite"></div>
+      <div id="key-notice" class="status warn hidden" role="status"></div>
+    </div>
 
-    <section id="settings" class="hidden" aria-labelledby="settings-title">
-      <h2 id="settings-title" tabindex="-1">Settings</h2>
-      <dl class="facts">
-        <dt>Server</dt>
-        <dd id="set-server"></dd>
-        <dt>Connected as</dt>
-        <dd id="set-label"></dd>
-        <dt>Key works until</dt>
-        <dd id="set-expires"></dd>
-      </dl>
-      <div class="actions-bar">
-        <button type="button" id="set-check">Check connection</button>
-        <button type="button" id="set-reconnect" title="Opens the options page, where you can connect again with a new key or another server address">Reconnect</button>
-        <button type="button" id="set-reset">Reset</button>
+    <section id="settings" class="hidden body" aria-labelledby="settings-title">
+      <div class="card">
+        <div class="card__head">
+          <h2 id="settings-title" tabindex="-1">Connection</h2>
+          <span id="set-state" class="p-status-label p-status-label--positive">Connected</span>
+        </div>
+        <dl class="facts">
+          <dt>Server</dt>
+          <dd id="set-server"></dd>
+          <dt>Connected as</dt>
+          <dd id="set-label"></dd>
+          <dt>Key works until</dt>
+          <dd id="set-expires"></dd>
+          <dt>Theme</dt>
+          <dd id="set-theme"></dd>
+        </dl>
+        <div class="actions-bar">
+          <button type="button" id="set-check">Check connection</button>
+          <button type="button" id="set-reconnect">Reconnect</button>
+        </div>
+        <p class="hint">Reconnect opens the Options page, where you can connect again with a new key or another server address.</p>
       </div>
       <div id="set-status" class="status hidden" role="status" aria-live="polite"></div>
+      <div class="card">
+        <h2>Reset this browser's setup</h2>
+        <p class="small muted">Removes the server address, the key and the chosen workspace from this browser. To use the extension again you connect it with a new key from JobHuntPA (Settings, Browser extension).</p>
+        <div class="actions-bar">
+          <button type="button" id="set-reset" class="negative">Reset</button>
+        </div>
+      </div>
       <div id="reset-confirm" class="status warn hidden" role="group" aria-labelledby="reset-question">
-        <p id="reset-question">Reset removes the server address, the key and the chosen workspace from this browser. To use the extension again you connect it with a new key from JobHuntPA (Settings, Browser extension).</p>
-        <div class="actions">
-          <button type="button" id="reset-yes">Reset now</button>
-          <button type="button" id="reset-no">Cancel</button>
+        <svg class="status__icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>
+        <div class="status__body">
+          <p id="reset-question">Reset removes the server address, the key and the chosen workspace from this browser. To use the extension again you connect it with a new key from JobHuntPA (Settings, Browser extension).</p>
+          <div class="actions">
+            <button type="button" id="reset-yes" class="negative">Reset now</button>
+            <button type="button" id="reset-no">Cancel</button>
+          </div>
         </div>
       </div>
     </section>
@@ -63,10 +101,10 @@
       <button type="button" role="tab" id="tab-source" aria-controls="panel-source" aria-selected="false" tabindex="-1">Add source</button>
     </div>
 
-    <section role="tabpanel" id="panel-job" aria-labelledby="tab-job">
+    <section role="tabpanel" id="panel-job" aria-labelledby="tab-job" class="body">
       <div id="job-status" class="status hidden" role="status" aria-live="polite"></div>
       <div id="map-box" class="status hidden" role="status" aria-live="polite"></div>
-      <section id="map-review" class="review hidden" aria-labelledby="map-review-title">
+      <section id="map-review" class="card review hidden" aria-labelledby="map-review-title">
         <h2 id="map-review-title" tabindex="-1">The job this layout finds</h2>
         <p id="map-review-note" class="small"></p>
         <dl id="map-fields" class="facts found"></dl>
@@ -76,14 +114,14 @@
         </div>
       </section>
       <form id="job-form" class="hidden" autocomplete="off">
-        <div id="job-existing" class="status warn hidden"></div>
+        <div id="job-existing" class="status info hidden"></div>
         <label for="f-title">Title</label>
         <input id="f-title" maxlength="500">
         <label for="f-company">Company</label>
         <input id="f-company" maxlength="500">
         <label for="f-location">Location</label>
         <input id="f-location" maxlength="500">
-        <div class="row">
+        <div class="row row--fields">
           <div class="grow">
             <label for="f-salary">Salary</label>
             <input id="f-salary" maxlength="500">
@@ -100,37 +138,48 @@
         </div>
         <label for="f-type">Employment type</label>
         <input id="f-type" maxlength="100">
-        <label for="f-desc" id="desc-label">Description (preview)</label>
-        <textarea id="f-desc" class="desc" readonly></textarea>
+        <div class="disclosure">
+          <div class="disclosure__row">
+            <label for="f-desc" id="desc-label" class="disclosure__text"><span class="disclosure__title">Description</span> <span id="desc-meta" class="disclosure__sub">preview</span></label>
+            <button type="button" id="desc-toggle" class="base is-small" aria-expanded="false" aria-controls="f-desc">Show</button>
+          </div>
+          <textarea id="f-desc" class="desc hidden" readonly></textarea>
+        </div>
         <ul id="job-notes" class="notes"></ul>
-        <div class="actions-bar">
-          <button type="submit" id="job-save" class="primary">Save job</button>
-          <button type="button" id="job-reread" title="Read the page again, for example after selecting the description text">Read page again</button>
+        <div class="actions-bar action-bar">
+          <div class="action-bar__row">
+            <button type="submit" id="job-save" class="primary">Save job</button>
+            <button type="button" id="job-reread">Read page again</button>
+          </div>
+          <p class="hint">Select text on the page first to use it as the description.</p>
         </div>
       </form>
       <div id="job-result" class="status ok hidden" role="status" aria-live="polite"></div>
     </section>
 
-    <section role="tabpanel" id="panel-list" aria-labelledby="tab-list" class="hidden">
+    <section role="tabpanel" id="panel-list" aria-labelledby="tab-list" class="body hidden">
       <form id="list-form" autocomplete="off">
         <p id="list-note" class="list-note"></p>
-        <div class="pick">
-          <button type="button" id="pick-all">Tick all</button>
-          <button type="button" id="pick-new">Tick new to you</button>
-          <button type="button" id="pick-none">Tick none</button>
+        <div class="pick u-row" role="group" aria-label="Tick">
+          <button type="button" id="pick-all" class="p-chip" aria-pressed="false">All</button>
+          <button type="button" id="pick-new" class="p-chip" aria-pressed="false">New to you</button>
+          <button type="button" id="pick-none" class="p-chip" aria-pressed="false">None</button>
         </div>
         <ul id="list-jobs" class="joblist"></ul>
-        <div class="actions-bar">
-          <button type="submit" id="list-save" class="primary">Add jobs</button>
-          <button type="button" id="list-reread" title="Read the page again, for example after moving to the next page of results">Read page again</button>
+        <p class="small muted list-foot">Each job is added from its summary on this page. Jobs JobHuntPA already has are left as they are. For a full ad, open the job and use Add job.</p>
+        <div class="actions-bar action-bar">
+          <div class="action-bar__row">
+            <button type="submit" id="list-save" class="primary">Add jobs</button>
+            <button type="button" id="list-reread">Read page again</button>
+          </div>
+          <p class="hint">Read the page again after moving to the next page of results.</p>
         </div>
-        <p class="small muted">Each job is added from its summary on this page. Jobs JobHuntPA already has are left as they are. For a full ad, open the job and use Add job.</p>
       </form>
       <div id="list-status" class="status hidden" role="status" aria-live="polite"></div>
       <div id="list-result" class="status ok hidden" role="status" aria-live="polite"></div>
     </section>
 
-    <section role="tabpanel" id="panel-source" aria-labelledby="tab-source" class="hidden">
+    <section role="tabpanel" id="panel-source" aria-labelledby="tab-source" class="body hidden">
       <form id="source-form" autocomplete="off">
         <p class="small muted">A careers page or job board that JobHuntPA's searches should crawl. For the page you have open, JobHuntPA first shows you the jobs it finds there.</p>
         <label for="s-url">Page address</label>
@@ -143,7 +192,7 @@
         </div>
       </form>
       <div id="source-status" class="status hidden" role="status" aria-live="polite"></div>
-      <section id="source-review" class="review hidden" aria-labelledby="source-review-title">
+      <section id="source-review" class="card review hidden" aria-labelledby="source-review-title">
         <h2 id="source-review-title" tabindex="-1">Jobs JobHuntPA found on this page</h2>
         <p id="source-found" class="small"></p>
         <ul id="source-sample" class="samples"></ul>

@@ -127,6 +127,11 @@ async function signIn(serverUrl) {
     eq("status request: bearer key", l.auth, `Bearer ${key}`);
     eq("status request: no cookies", l.cookie, "");
   }
+  if (!REAL) {
+    eq("options stores the account's theme", st.theme, "catppuccin-mocha-aa");
+    eq("options paints the account's theme", await opt.evaluate(() => document.documentElement.getAttribute("data-theme")), "catppuccin-mocha-aa");
+    check("options shows the theme on the Connection card", /Catppuccin Mocha, from your JobHuntPA account/.test(await opt.textContent("#opt-theme")), await opt.textContent("#opt-theme"));
+  }
   await opt.screenshot({ path: path.join(OUT, "options.png") });
 
   // Opens the popup page in a background tab of the same window as `target`, so that
@@ -166,7 +171,15 @@ async function signIn(serverUrl) {
   eq("preview: title", await popup.inputValue("#f-title"), "Senior Analyst");
   eq("preview: company", await popup.inputValue("#f-company"), REAL ? await popup.inputValue("#f-company") : "Example Corp");
   check("preview: description present", (await popup.inputValue("#f-desc")).length > 20);
-  check("popup shows the page url", (await popup.textContent("#page-url")).includes("job-ld.html"));
+  check("popup shows the page's site and title", /127\.0\.0\.1|localhost/.test(await popup.textContent("#page-url")) && /Senior Analyst|job-ld\.html/.test(await popup.textContent("#page-url")), await popup.textContent("#page-url"));
+  if (!REAL) {
+    eq("popup paints the account's theme (from the status answer)", await popup.evaluate(() => document.documentElement.getAttribute("data-theme")), "catppuccin-mocha-aa");
+    check("popup shows once the theme is known", await popup.evaluate(() => !document.documentElement.classList.contains("theme-pending") && getComputedStyle(document.body).visibility === "visible"));
+    check("the description preview is folded away until Show", (await popup.locator("#f-desc.hidden").count()) === 1);
+    await popup.click("#desc-toggle");
+    check("Show unfolds the description preview", (await popup.locator("#f-desc:not(.hidden)").count()) === 1 && (await popup.getAttribute("#desc-toggle", "aria-expanded")) === "true");
+    await popup.click("#desc-toggle");
+  }
   check("a job page has no \"Jobs on this page\" tab", (await popup.locator("#tab-list.hidden").count()) === 1);
   await popup.screenshot({ path: path.join(OUT, "popup-job.png") });
   eq("form: location from the address parts", await popup.inputValue("#f-location"), "Berlin, BE, DE");
@@ -1026,7 +1039,7 @@ async function signIn(serverUrl) {
   opt = reopened;
   await opt.waitForSelector("#status.ok");
   check("options: says what it is connected to, with the saved key kept", /Connected to/.test(await opt.textContent("#status")) && (await opt.inputValue("#server")) === serverUrl && (await opt.inputValue("#key")) === "", await opt.textContent("#status"));
-  check("options: reconnect or reset is explained", /Reconnect or reset/.test(await opt.textContent("#manage-title")) && (await opt.isVisible("#reset")));
+  check("options: the Connection card, reconnect and reset", /Connection/.test(await opt.textContent("#manage-title")) && (await opt.textContent("#opt-server")) === serverUrl && /Reconnect with another key/.test(await opt.textContent("#connect-title")) && (await opt.isVisible("#reset")));
   // Reconnect with the saved key: Connect alone tries it again
   await opt.click("#connect");
   await opt.waitForFunction(() => /You can close this page/.test(document.querySelector("#status").textContent));

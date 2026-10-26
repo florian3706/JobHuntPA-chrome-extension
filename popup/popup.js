@@ -1,7 +1,8 @@
 import { ext } from "../lib/ext.js";
-import { $, el, clear } from "../lib/dom.js";
+import { $, el, clear, statusBody } from "../lib/dom.js";
 import { api, describeError, serverLink } from "../lib/api.js";
 import { loadConfig, saveConfig, hasServerAccess, resetSetup } from "../lib/config.js";
+import { applyTheme, followTheme, knownTheme, describeTheme } from "../lib/theme.js";
 import { activeTab, capturePage, CaptureError, isReadableUrl, captureOutline, readMappedValues } from "../lib/capture.js";
 import { extractJob, buildBody, notesFor, extractListing, buildListBody, listingNote, LIST_LIMITS } from "../lib/extract.js";
 import { needsMapping, applyMappedValues, mappedPreview } from "../lib/extract.js";
@@ -31,6 +32,7 @@ const LIST_API = 2; // the server's `api` number from which it takes a page of j
 const MAPPING_API = 3; // ... from which it works pages out with its AI and keeps the layouts of job sites
 const OLD_SERVER = "Your JobHuntPA server can't take a page of jobs yet. Update JobHuntPA, then open this again.";
 const OLD_MAPPING = "Your JobHuntPA server can't work out pages yet. Update JobHuntPA, then try again.";
+const EXPIRY_WARN_DAYS = 7; // the popup warns when the key has this long left (a year at most, 60 days unused)
 
 // ---------- small UI helpers ----------
 
@@ -40,19 +42,32 @@ function show(node, on = true) {
 
 /** Fill a status box. parts: message string; opts { kind, busy, optionsLink, actions: [[label, fn]] } */
 function setStatus(box, message, opts = {}) {
-  clear(box);
-  box.className = "status" + (opts.kind ? ` ${opts.kind}` : "");
-  const p = el("p");
-  if (opts.busy) p.append(el("span", { class: "spinner", "aria-hidden": "true" }));
-  p.append(document.createTextNode(message));
-  box.append(p);
+  const body = statusBody(box, opts.kind, opts.busy);
+  body.append(el("p", { text: message }));
   const actions = [...(opts.actions || [])];
   if (opts.optionsLink) actions.push(["Open Options", () => ext.runtime.openOptionsPage()]);
   if (actions.length) {
     const bar = el("div", { class: "actions" });
     for (const [label, fn] of actions) bar.append(el("button", { type: "button", text: label, onclick: fn }));
-    box.append(bar);
+    body.append(bar);
   }
+}
+
+/** The header's line under the name: the page's site and title (the whole address stays in Add source). */
+function pageLine(t) {
+  if (!t || !t.url) return "";
+  let host = "";
+  let path = "";
+  try {
+    const u = new URL(t.url);
+    host = u.host;
+    path = u.pathname === "/" ? "" : u.pathname;
+  } catch {
+    return t.url;
+  }
+  const title = t.title ? String(t.title).trim() : "";
+  if (host && title) return `${host} \u00b7 ${title}`;
+  return host ? `${host}${path}` : t.url;
 }
 
 function setError(box, err, cfgForMsg, extraActions = []) {
@@ -81,6 +96,7 @@ function serverAnchor(text, link) {
 // ---------- start ----------
 
 async function init() {
+  followTheme();
   $("#open-options").addEventListener("click", () => {
     ext.runtime.openOptionsPage();
     window.close();
@@ -91,6 +107,12 @@ async function init() {
     return;
   }
   show($("#main"));
+  $("#desc-toggle").addEventListener("click", () => {
+    const on = $("#f-desc").classList.contains("hidden");
+    show($("#f-desc"), on);
+    $("#desc-toggle").textContent = on ? "Hide" : "Show";
+    $("#desc-toggle").setAttribute("aria-expanded", String(on));
+  });
   setupTabs();
   setupSettings();
   setupWorkspaceSelect();
@@ -98,9 +120,9 @@ async function init() {
   $("#job-reread").addEventListener("click", () => startJob(true));
   $("#list-form").addEventListener("submit", onSaveList);
   $("#list-reread").addEventListener("click", () => startJob(true));
-  $("#pick-all").addEventListener("click", () => pickJobs(() => true));
-  $("#pick-new").addEventListener("click", () => pickJobs((job) => job.is_new));
-  $("#pick-none").addEventListener("click", () => pickJobs(() => false));
+  $("#pick-all").addEventListener("click", () => pickJobs(() => true, "#pick-all"));
+  $("#pick-new").addEventListener("click", () => pickJobs((job) => job.is_new, "#pick-new"));
+  $("#pick-none").addEventListener("click", () => pickJobs(() => false, "#pick-none"));
   $("#source-form").addEventListener("submit", onAddSource);
   $("#source-test").addEventListener("click", onTestSource);
   $("#s-url").addEventListener("input", () => {
@@ -120,7 +142,7 @@ async function init() {
   });
 
   tab = await activeTab();
-  $("#page-url").textContent = tab && tab.url ? tab.url : "";
+  $("#page-url").textContent = pageLine(tab);
   if (tab && isReadableUrl(tab.url)) $("#s-url").value = tab.url;
   await startJob(true);
 }
@@ -212,6 +234,14 @@ function fillSettings() {
   $("#set-server").textContent = cfg.server;
   $("#set-label").textContent = cfg.label || "(no name)";
   $("#set-expires").textContent = cfg.expiresAt ? new Date(cfg.expiresAt).toLocaleDateString() : "unknown";
+  $("#set-theme").textContent = describeTheme(cfg.theme);
+}
+
+/** The "Connected" label in the Settings view. */
+function setConnState(ok) {
+  const tag = $("#set-state");
+  tag.textContent = ok ? "Connected" : "Not working";
+  tag.className = "p-status-label " + (ok ? "p-status-label--positive" : "p-status-label--negative");
 }
 
 /** Shows the settings in place of the tabs, or the tabs again. */
@@ -240,12 +270,15 @@ async function onCheckConnection() {
   try {
     if (!(await hasServerAccess(cfg.server))) {
       setStatus(box, `This extension has no permission for ${cfg.server} any more. Press Reconnect and connect again.`, { kind: "error" });
+      setConnState(false);
       return;
     }
     await refreshStatus();
     fillSettings();
+    setConnState(true);
     setStatus(box, "The connection works.", { kind: "ok" });
   } catch (err) {
+    setConnState(false);
     setError(box, err, cfg);
   } finally {
     btn.disabled = false;
@@ -338,8 +371,11 @@ async function loadStatus() {
   }
   cfg.expiresAt = s.expires_at || "";
   if (s.label) cfg.label = String(s.label);
-  await saveConfig({ workspaces: list, workspace: cfg.workspace, expiresAt: cfg.expiresAt, label: cfg.label });
+  if ("theme" in s) cfg.theme = knownTheme(s.theme); // an older server sends none: the stored one stays
+  await saveConfig({ workspaces: list, workspace: cfg.workspace, expiresAt: cfg.expiresAt, label: cfg.label, theme: cfg.theme || "" });
+  applyTheme(cfg.theme);
   fillWorkspaces();
+  warnExpiry();
   const box = $("#ws-notice");
   if (notice) {
     box.textContent = notice;
@@ -347,6 +383,17 @@ async function loadStatus() {
   } else {
     show(box, false);
   }
+}
+
+/** A caution under the header while the key has EXPIRY_WARN_DAYS or fewer left. */
+function warnExpiry() {
+  const box = $("#key-notice");
+  const t = cfg.expiresAt ? Date.parse(cfg.expiresAt) : NaN;
+  const days = Number.isNaN(t) ? NaN : Math.ceil((t - Date.now()) / 86400000);
+  if (!(days <= EXPIRY_WARN_DAYS)) return show(box, false);
+  const when = days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
+  setStatus(box, `This browser's key stops working ${when}. Connect the extension again in JobHuntPA (Settings, Browser extension) and paste the new key on the Options page.`, { kind: "warn", optionsLink: true });
+  show(box);
 }
 
 /** The saved layout of the site when the page's own reading needs one, then "is this job already there?". */
@@ -405,8 +452,7 @@ function renderJob(job) {
     main: "the page text",
     body: "the page text",
   }[job.description_from];
-  $("#desc-label").textContent =
-    "Description (preview" + (desc ? `, ${desc.length.toLocaleString()} characters` : "") + (from ? `, from ${from}` : "") + ")";
+  $("#desc-meta").textContent = (desc ? `${desc.length.toLocaleString()} characters` : "none found on this page") + (from && desc ? `, from ${from}` : "");
   const notes = $("#job-notes");
   clear(notes);
   for (const n of notesFor(job)) notes.append(el("li", { text: n }));
@@ -419,12 +465,12 @@ function renderJob(job) {
 function renderExisting(existing) {
   const ex = $("#job-existing");
   if (existing) {
-    clear(ex);
-    ex.append(
-      el("p", {}, document.createTextNode("Already in JobHuntPA: "), serverAnchor(str(existing.title) || "open it", existing.link || ""),
-        document.createTextNode(existing.status ? ` (${existing.status}).` : ".")),
-      el("p", { class: "small", text: "Saving updates that job with the values below." }),
-    );
+    const body = statusBody(ex, "info");
+    const line = el("p", {}, serverAnchor(str(existing.title) || "open it", existing.link || ""));
+    if (existing.status) {
+      line.append(document.createTextNode(" "), el("span", { class: "p-status-label p-status-label--information", text: str(existing.status).replace(/_/g, " ") }));
+    }
+    body.append(el("p", { class: "status__title", text: "Already in JobHuntPA" }), line, el("p", { class: "small muted", text: "Saving updates that job with the values below." }));
     show(ex);
     $("#job-save").textContent = "Update job";
   } else {
@@ -464,15 +510,14 @@ async function onSaveJob(e) {
   try {
     const r = await api(cfg, "POST", "/api/extension/jobs", buildBody(extracted, fields), { timeout: TIMEOUT.save });
     show(status, false);
-    clear(result);
     const verb = r.created === false ? "Updated the existing job" : "Saved";
-    result.className = "status ok";
-    result.append(
+    const body = statusBody(result, "ok");
+    body.append(
       el("p", {}, document.createTextNode(`${verb} — `), serverAnchor("Open in JobHuntPA", r.link || "")),
       el("p", { class: "small muted", text: [r.title, r.company].filter(Boolean).join(" · ") }),
     );
     if (typeof r.excluded_reason === "string" && r.excluded_reason.trim()) {
-      result.append(
+      body.append(
         el("p", {
           class: "small",
           text: "The job is saved, but your search filters exclude it, so it only shows in JobHuntPA's Jobs list with \u201cShow excluded\u201d ticked.",
@@ -677,17 +722,25 @@ function renderListing(pickTab) {
   for (const job of jobs) {
     const box = el("input", { type: "checkbox" });
     box.checked = fresh ? job.is_new : true;
-    box.addEventListener("change", updateListButton);
+    box.addEventListener("change", () => {
+      pressChip(null); // a tick of one's own: none of the chips describes the ticks any more
+      updateListButton();
+    });
     const tags = [];
     if (job.is_new) tags.push("New to you");
     const meta = [job.company, job.location_text, job.salary_text, job.listed].filter(Boolean).join(" \u00b7 ");
     const text = el("span", { class: "jobrow" }, el("span", { class: "jobrow-title", text: job.title }));
     if (meta) text.append(el("span", { class: "jobrow-meta", text: meta }));
-    for (const t of tags) text.append(el("span", { class: "tag", text: t }));
+    if (tags.length) {
+      const labels = el("span", { class: "jobrow-labels" });
+      for (const t of tags) labels.append(el("span", { class: "p-status-label p-status-label--positive", text: t }));
+      text.append(labels);
+    }
     const item = el("li", {}, el("label", {}, box, text));
     ul.append(item);
     listRows.push({ job, box, item, done: false });
   }
+  pressChip(fresh && fresh < jobs.length ? "#pick-new" : "#pick-all");
   if ((cfg.api || 1) < LIST_API) {
     setStatus($("#list-status"), OLD_SERVER, { kind: "warn" });
     show($("#list-status"));
@@ -699,8 +752,14 @@ function renderListing(pickTab) {
   }
 }
 
-function pickJobs(want) {
+/** The chip that describes the ticks (All, New to you, None) is shown pressed; `null` presses none. */
+function pressChip(sel) {
+  for (const id of ["#pick-all", "#pick-new", "#pick-none"]) $(id).setAttribute("aria-pressed", String(id === sel));
+}
+
+function pickJobs(want, chip) {
   for (const row of listRows) if (!row.done) row.box.checked = !!want(row.job);
+  pressChip(chip || null);
   updateListButton();
 }
 
@@ -769,13 +828,12 @@ async function onSaveList(e) {
   } else {
     show(status, false);
   }
-  clear(result);
-  result.className = "status ok";
+  const body = statusBody(result, "ok");
   const lines = [added ? `Added ${plural(added, "job")}.` : "No new jobs were added."];
   if (existing) lines.push(`${plural(existing, "job")} ${existing === 1 ? "was" : "were"} already in JobHuntPA and ${existing === 1 ? "was left as it is" : "were left as they are"}.`);
-  result.append(el("p", {}, document.createTextNode(`${lines.join(" ")} `), serverAnchor("Open JobHuntPA", "/")));
+  body.append(el("p", {}, document.createTextNode(`${lines.join(" ")} `), serverAnchor("Open JobHuntPA", "/")));
   if (excluded) {
-    result.append(
+    body.append(
       el("p", {
         class: "small",
         id: "list-excluded",
@@ -953,28 +1011,26 @@ async function onTestSource() {
   show(status);
   try {
     const r = await api(cfg, "POST", `/api/sources/${encodeURIComponent(source.id)}/test`, {}, { timeout: TIMEOUT.test });
-    clear(status);
+    const n = Number(r.count) || 0;
+    const body = statusBody(status, r.ok ? (n > 0 ? "ok" : "warn") : "error");
     if (r.ok) {
-      const n = Number(r.count) || 0;
-      status.className = "status " + (n > 0 ? "ok" : "warn");
-      status.append(
+      body.append(
         el("p", { text: n > 0 ? `Found ${n} posting${n === 1 ? "" : "s"}${r.method ? ` (read via ${r.method})` : ""}.` : "No postings found on this page." }),
       );
       const sample = Array.isArray(r.sample) ? r.sample.slice(0, 5) : [];
       if (sample.length) {
         const ul = el("ul", { class: "samples" });
         for (const s of sample) ul.append(el("li", { text: [s.title, s.location].filter(Boolean).join(" — ") }));
-        status.append(ul);
+        body.append(ul);
       }
     } else {
-      status.className = "status error";
-      status.append(el("p", { text: str(r.error) || "The test did not find any postings." }));
+      body.append(el("p", { text: str(r.error) || "The test did not find any postings." }));
     }
     const notes = Array.isArray(r.notes) ? r.notes : [];
     if (notes.length) {
       const ul = el("ul", { class: "notes" });
       for (const n of notes) ul.append(el("li", { text: String(n) }));
-      status.append(ul);
+      body.append(ul);
     }
   } catch (err) {
     setError(status, err, cfg);
